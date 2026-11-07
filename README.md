@@ -138,3 +138,20 @@ OMP_NUM_THREADS=2 .venv/bin/python -m deepfake_dtw.extract \
 ```
 
 This optional DINOv2 loading path has only been tested with controlled test doubles and a verified source checkout; actual DINOv2 weight loading, feature shapes, CPU memory, and inference remain unverified. Full offline execution has also not been verified.
+
+### Verifying the supplied checkpoint parts
+
+The current supplied part set is incomplete: `tiny.en.pt.part.001` and `dinov2_vits14_pretrain.pth.part.001` are missing. The other six pieces are staged with owner-only permissions under `/workspace/deepfake-private/checkpoint-parts/`. The complete DINOv2 attachment exceeded the transfer tool's 32 MiB limit. Attach the two missing 24,000,000-byte pieces, preserving their exact filenames; transfer them to that private parts directory. Never add them to Git.
+
+Then run the following commands; each verifies all four pieces, exact total size, and the complete expected hash before atomically creating an owner-only checkpoint. Existing output files are never overwritten. The Whisper hash comes from upstream; the DINOv2 expected hash (`b938bf1bc15cd2ec0feacfe3a1bb553fe8ea9ca46a7e1d8d00217f29aef60cd9`) was supplied by the user and verifies transfer integrity rather than independent upstream provenance.
+
+```sh
+.venv/bin/python -m deepfake_dtw.assemble whisper \
+  --parts-dir /workspace/deepfake-private/checkpoint-parts \
+  --output-dir /workspace/deepfake-private
+.venv/bin/python -m deepfake_dtw.assemble dinov2 \
+  --parts-dir /workspace/deepfake-private/checkpoint-parts \
+  --output-dir /workspace/deepfake-private
+```
+
+Use the DINOv2 readiness and extraction commands above with `DINO_SHA=b938bf1bc15cd2ec0feacfe3a1bb553fe8ea9ca46a7e1d8d00217f29aef60cd9`. Neither model has yet loaded, and a matching DINOv2 hash does not by itself establish the source or license of its contents.
