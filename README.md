@@ -11,4 +11,4 @@ Phase 2 research foundation. We will investigate whether dynamic time warping (D
 - [Product vision](docs/product-vision.md)
 - [Design principles](docs/design-principles.md)
 
-Milestone 1 only; no datasets or model weights are included. Milestone 2 requires approval and resolution of applicable access and licensing gates. Research outputs are not proof of identity or a basis for automated decisions about a person.
+Milestone 2A records the research and license review; no datasets or model weights are included. Milestone 2B requires approval and resolution of applicable access and licensing gates. Research outputs are not proof of identity or a basis for automated decisions about a person.
