@@ -26,6 +26,7 @@ def run(path, *, audio_checkpoint=None, visual_checkpoint=None, visual_sha256=No
     report = {'schema_version': 1, 'status': 'error', 'classification': 'not implemented', 'alignment': 'not validated', 'features_written': False}
     try:
         audio, video, media = read_mp4(path)
+        media['input_sha256'] = _sha256(path)
         report['media'] = media
         detector = FaceMeshDetector()
         face_start = time.perf_counter()
