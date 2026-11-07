@@ -5,7 +5,7 @@ from pathlib import Path
 import torch
 import whisper
 from whisper.model import AudioEncoder
-from torchvision.models import resnet18
+from torchvision.models import ResNet18_Weights, resnet18
 
 from .preprocessing import Prepared
 
@@ -62,14 +62,17 @@ class WhisperAudioEncoder:
 
 
 class VisualEncoder:
-    def __init__(self, *, device: torch.device, seed: int = 0, checkpoint: str | None = None, sha256: str | None = None):
+    def __init__(self, *, device: torch.device, seed: int = 0, checkpoint: str | None = None, sha256: str | None = None, checkpoint_format: str = "custom"):
         self.device = device
+        if checkpoint_format not in ("custom", "torchvision_imagenet1k_v1"):
+            raise ValueError("Unknown visual checkpoint format")
+        if checkpoint_format != "custom" and checkpoint is None:
+            raise ValueError("Official visual format requires a checkpoint")
         if (checkpoint is None) != (sha256 is None):
             raise ValueError("Visual checkpoint and expected SHA-256 must be supplied together")
         with torch.random.fork_rng():
             torch.manual_seed(seed)
             self.model = resnet18(weights=None)
-        self.model.fc = torch.nn.Identity()
         digest = None
         if checkpoint is not None:
             path = Path(checkpoint)
@@ -79,13 +82,19 @@ class VisualEncoder:
                 digest = hashlib.file_digest(stream, "sha256").hexdigest()
             if digest != sha256.lower():
                 raise ValueError("Visual checkpoint SHA-256 mismatch")
+            if checkpoint_format == "torchvision_imagenet1k_v1" and not digest.startswith("f37072fd"):
+                raise ValueError("Checkpoint does not match official torchvision hash prefix")
+            if checkpoint_format == "custom":
+                self.model.fc = torch.nn.Identity()
             self.model.load_state_dict(torch.load(path, map_location="cpu", weights_only=True), strict=True)
+        self.model.fc = torch.nn.Identity()
+        self.transform = ResNet18_Weights.IMAGENET1K_V1.transforms() if checkpoint_format == "torchvision_imagenet1k_v1" else torch.nn.Identity()
         self.model.to(device).eval()
-        self.provenance = {"model": "torchvision ResNet-18", "weights": "user_supplied" if checkpoint else "uninitialized", "seed": None if checkpoint else seed, "checkpoint_sha256": digest, "note": "User-supplied digest verifies integrity only, not license or training provenance."}
+        self.provenance = {"model": "torchvision ResNet-18", "weights": "user_supplied" if checkpoint else "uninitialized", "seed": None if checkpoint else seed, "checkpoint_sha256": digest, "checkpoint_format": checkpoint_format, "preprocessing": "torchvision IMAGENET1K_V1 resize 256, center crop 224 and ImageNet normalization applied to already-resized mouth crop" if checkpoint_format == "torchvision_imagenet1k_v1" else "RGB float [0,1], resized 224x224; no ImageNet normalization", "source": "https://download.pytorch.org/models/resnet18-f37072fd.pth" if checkpoint_format == "torchvision_imagenet1k_v1" else None, "note": "User-supplied digest verifies integrity only, not license or training provenance."}
 
     def extract(self, video: Prepared) -> Prepared:
         if video is None or video.values.ndim != 4 or video.values.shape[1:] != (3, 224, 224) or len(video.values) == 0:
             raise ValueError("Prepared RGB video frames are required")
         with torch.inference_mode():
-            features = self.model(video.values.to(self.device)).cpu()
+            features = self.model(self.transform(video.values.to(self.device))).cpu()
         return Prepared(features, video.timestamps.clone(), {**video.metadata, **self.provenance})
