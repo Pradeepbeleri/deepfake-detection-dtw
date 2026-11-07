@@ -27,7 +27,7 @@ python3.12 -m venv .venv
 .venv/bin/python -m deepfake_dtw.smoke --audio-mode uninitialized --device cpu
 ```
 
-For authorized official weights already downloaded and verified, run `.venv/bin/python -m deepfake_dtw.smoke --audio-mode pretrained --checkpoint /path/to/tiny.en.pt --device cpu`. The program checks the upstream SHA-256 before loading and does not download the checkpoint. The checkpoint host was blocked in the test environment; pretrained extraction remains unverified. An offline run requires dependencies and the verified checkpoint to be installed in advance; the current uninitialized smoke test runs without network, but is not an offline detector demonstration.
+For authorized official weights already downloaded and verified, run `.venv/bin/python -m deepfake_dtw.smoke --audio-mode pretrained --checkpoint /path/to/tiny.en.pt --device cpu`. The program checks the upstream SHA-256 before loading and does not download the checkpoint. The checkpoint host was blocked in the test environment; the supplied, hash-verified checkpoint was subsequently used in the real-media run below. An offline run requires dependencies and the verified checkpoint to be installed in advance; the current uninitialized smoke test runs without network, but is not an offline detector demonstration.
 
 Inputs to the package are decoded arrays: samples in `(samples,)` or `(samples, channels)` and uint8 RGB video in `(frames, height, width, 3)` with presentation timestamps. Audio is downmixed and resampled to 16 kHz; frames are selected on a 25 fps timestamp grid, resized to 224×224 and scaled to [0,1]. Timestamps and transformations are returned with features. MP4 decoding and experimental face and mouth cropping are implemented as described below; long audio chunking is not implemented. Whisper pads up to 30 seconds and uses global attention: output positions at 20 ms intervals are nominal, and even positions within the original audio duration may be influenced by padding. These constraints require evaluation before timing research.
 
@@ -43,7 +43,7 @@ The command writes a JSON report to stdout and exits with code 2 when no feature
 
 The decoder accepts local MP4 with exactly one audio and one video stream, duration at most 30 seconds, at most 100 MB, at most 1920×1080 and at most 200 MB of decoded RGB frames after scaling to 224×224. It rejects missing or discontinuous audio timestamps and non-increasing video presentation timestamps. FFmpeg converts audio to 16 kHz mono; ffprobe presentation ticks multiplied by each stream's time base retain a common container timeline. Positive `audio_minus_video_seconds` means audio starts later. This is a stream-start offset, **not** a measured lip-sync delay; AAC priming, padding and edit lists can affect interpretation. Frames are selected by timestamp at 25 Hz, then resized to 224×224. The report includes source timestamps, selection indices and transform metadata. Media remains in memory; no source frames are persisted by default.
 
-MediaPipe Face Mesh runs per frame, using mouth landmark bounds. Missing faces are skipped; multiple faces or continuity loss prevent extraction. Up to three consecutive missing frames can be followed by reacquisition with an IoU check; this is a conservative heuristic, not reliable identity or active-speaker tracking. Crops are not fabricated, and quality flags must be inspected. Neither real-person accuracy nor a valid end-to-end pretrained feature run has been verified. The current CLI does not implement DTW, deepfake classification or scores.
+MediaPipe Face Mesh runs per frame, using mouth landmark bounds. Missing faces are skipped; multiple faces or continuity loss prevent extraction. Up to three consecutive missing frames can be followed by reacquisition with an IoU check; this is a conservative heuristic, not reliable identity or active-speaker tracking. Crops are not fabricated, and quality flags must be inspected. Real-person detection accuracy across a population has not been evaluated; the two pretrained feature runs on one consented excerpt are documented below. The current CLI does not implement DTW, deepfake classification or scores.
 
 The [MediaPipe 0.10.21 repository license](https://github.com/google-ai-edge/mediapipe/blob/v0.10.21/LICENSE) and installed wheel metadata specify Apache 2.0; Face Mesh model assets are bundled in the wheel. The local short-range face detector and face-landmark asset SHA-256 values are respectively `bbff11cebd1eb27a1e004cae0b0e63ec8c551cbf34a4451148b4908b8db3eca8` and `1055cb9d4a9ca8b8c688902a3a5194311138ba256bcc94e336d8373a5f30c814`. These record installed files, not independent upstream checksum verification. Review model-card, data rights, consent and institutional policies for the intended use; code license does not grant rights to people's videos.
 
@@ -55,11 +55,11 @@ After permission is confirmed, obtain the file directly from its upstream source
 
 [Whisper upstream](https://github.com/openai/whisper/tree/86098128c0b4f24f0e2aa2994de830614b474227) releases code and weights under MIT. The pinned source names the official `tiny.en` SHA-256 `d3dd57d32accea0b295c96e26691aa14d8822fac7d9d27d5dc00b4ca2826dd03`. This environment's proxy denied the official checkpoint host. Once access is allowed, obtain the artifact from the official URL listed in the source, verify the full SHA-256 with `sha256sum`, and supply it as `--audio-checkpoint`; no untrusted mirror, disabled verification, or automatic random fallback is used.
 
-Use a short MP4 recorded with explicit subject consent and authorization for this project, placed outside the repository; do not upload restricted datasets. Run the command above with both authorized checkpoints, `--authorized-models`, an explicit private output path and the visual format. Redirect stdout to a private report file. The NPZ output includes feature arrays, timestamp arrays, and a `metadata_json` string containing preprocessing, face quality, model hashes and provenance. Review privacy and retention before storing or sharing. Real-media validation and pretrained extraction are not yet verified.
+Use a short MP4 recorded with explicit subject consent and authorization for this project, placed outside the repository; do not upload restricted datasets. Run the command above with both authorized checkpoints, `--authorized-models`, an explicit private output path and the visual format. Redirect stdout to a private report file. The NPZ output includes feature arrays, timestamp arrays, and a `metadata_json` string containing preprocessing, face quality, model hashes and provenance. Review privacy and retention before storing or sharing. Real-media preprocessing and pretrained extraction were exercised on one consented excerpt; see measured validation below.
 
 ## Private 10–15 second validation
 
-This workflow is prepared but has not been validated with a real person or pretrained checkpoints. Recording and processing require the participant's informed permission and the university's applicable privacy rules. The separate Whisper and ResNet features are **not** validated as aligned and do not detect deepfakes.
+This workflow was exercised on one consented recording with pretrained checkpoints, as described below; broader validation remains needed. Recording and processing require the participant's informed permission and the university's applicable privacy rules. The separate Whisper and ResNet features are **not** validated as aligned and do not detect deepfakes.
 
 1. Ask one consenting adult to record 10–15 seconds of their own face while speaking clearly. Keep the mouth visible, use steady lighting, avoid other people and background speech, and save the recording as MP4 with its original sound. Do not use someone else's recording without permission. The current implementation rejects multiple faces and accepts at least 80% detected mouth crops; this threshold is provisional and not a validated quality standard. Supported inputs are at most 30 seconds, 100 MB and 1920×1080; timestamp issues and unsupported media are reported explicitly.
 2. Place files **outside the repository** in the private directory `/workspace/deepfake-private/`:
@@ -137,4 +137,29 @@ OMP_NUM_THREADS=2 .venv/bin/python -m deepfake_dtw.extract \
   > /workspace/deepfake-private/extraction-report-dinov2.json
 ```
 
-This optional DINOv2 loading path has only been tested with controlled test doubles and a verified source checkout; actual DINOv2 weight loading, feature shapes, CPU memory, and inference remain unverified. Full offline execution has also not been verified.
+The optional DINOv2 loading path has now run on the consented excerpt with the supplied weights; see the measured validation below. Network isolation has not been verified.
+
+### Verifying the supplied checkpoint parts
+
+All eight supplied parts were transferred and assembled privately. The complete DINOv2 attachment exceeded the transfer tool's 32 MiB limit; the four-part transfer succeeded. The commands below are retained for a fresh environment with the same original 24,000,000-byte parts staged under `/workspace/deepfake-private/checkpoint-parts/`. Never add them to Git.
+
+Then run the following commands; each verifies all four pieces, exact total size, and the complete expected hash before atomically creating an owner-only checkpoint. Existing output files are never overwritten. The Whisper hash comes from upstream; the DINOv2 expected hash (`b938bf1bc15cd2ec0feacfe3a1bb553fe8ea9ca46a7e1d8d00217f29aef60cd9`) was supplied by the user and verifies transfer integrity rather than independent upstream provenance.
+
+```sh
+.venv/bin/python -m deepfake_dtw.assemble whisper \
+  --parts-dir /workspace/deepfake-private/checkpoint-parts \
+  --output-dir /workspace/deepfake-private
+.venv/bin/python -m deepfake_dtw.assemble dinov2 \
+  --parts-dir /workspace/deepfake-private/checkpoint-parts \
+  --output-dir /workspace/deepfake-private
+```
+
+Use the DINOv2 readiness and extraction commands above with `DINO_SHA=b938bf1bc15cd2ec0feacfe3a1bb553fe8ea9ca46a7e1d8d00217f29aef60cd9`. Both models subsequently loaded and ran on the consented excerpt as described below; a matching DINOv2 hash does not by itself establish the source or license of its contents.
+
+### Real pretrained extraction: measured validation
+
+On 7 November 2026, the supplied four-part Whisper file reassembled to 75,571,315 bytes and matched its upstream SHA-256 `d3dd57d32accea0b295c96e26691aa14d8822fac7d9d27d5dc00b4ca2826dd03`. The four-part DINOv2 file reassembled to 88,283,115 bytes and matched the user-supplied SHA-256 `b938bf1bc15cd2ec0feacfe3a1bb553fe8ea9ca46a7e1d8d00217f29aef60cd9`; that is a transfer-integrity comparison, not an independently published upstream checksum. Two CPU runs on the private, consented, re-encoded 12-second excerpt both returned `features_extracted`. Whisper encoder output was `[1, 1500, 384]`; DINOv2 output was `[300, 384]`; values were finite and the two outputs and timestamps were bit-for-bit equal on this machine. Each output file was about 2.6 MB and remains private. The loaded audio and visual encoders had 7,632,384 and 22,056,576 parameters respectively.
+
+The first run took 39.749 s total, including 2.384 s video decoding, 0.095 s audio decoding, 1.969 s face/mouth processing, 0.697 s model loading, 0.417 s Whisper inference and 29.898 s DINOv2 inference. Peak Python-process RSS was 1,414,464 KiB, excluding FFmpeg child processes; CPU execution used two threads, with xFormers disabled. The second run took 41.240 s and produced identical tensors. The excerpt had 300 mouth detections across 300 25 fps target frames; source-index and feature-timestamp mappings were checked. All visual feature timestamps fell within the 12.00475 s decoded-audio interval. Whisper's 1500 nominal timestamps extend to 29.98 s because of padding: only 601 nominal positions fall within the input duration, and all positions can depend on padded context through attention. Timestamp checks do not establish audio-visual embedding alignment.
+
+Python 3.12.14, PyTorch 2.5.1+cpu, torchvision 0.20.1+cpu, Whisper 20250625 at the pinned source revision, NumPy 1.26.4, SciPy 1.15.3, and MediaPipe 0.10.21 were used. Repeat extraction used local checkpoints without additional downloads, but network isolation was not enforced: `unshare -n` returned `Operation not permitted`. This is a pretrained feature extraction demonstration, not a deepfake detector or an offline faculty demonstration of detection.
