@@ -20,7 +20,7 @@ def _sha256(path):
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
-def run(path, *, audio_checkpoint=None, visual_checkpoint=None, visual_sha256=None, authorized=False, output=None, device='cpu'):
+def run(path, *, audio_checkpoint=None, visual_checkpoint=None, visual_sha256=None, visual_format='custom', authorized=False, output=None, device='cpu'):
     started = time.perf_counter()
     report = {'schema_version': 1, 'status': 'error', 'classification': 'not implemented', 'alignment': 'not validated', 'features_written': False}
     try:
@@ -53,12 +53,12 @@ def run(path, *, audio_checkpoint=None, visual_checkpoint=None, visual_sha256=No
             chosen = select_device(device)
             feature_start = time.perf_counter()
             audio_model = WhisperAudioEncoder(device=chosen, mode='pretrained', checkpoint=audio_checkpoint)
-            video_model = VisualEncoder(device=chosen, checkpoint=visual_checkpoint, sha256=visual_sha256)
+            video_model = VisualEncoder(device=chosen, checkpoint=visual_checkpoint, sha256=visual_sha256, checkpoint_format=visual_format)
             af, vf = audio_model.extract(audio), video_model.extract(mouths)
             if not torch.isfinite(af.values).all() or not torch.isfinite(vf.values).all():
                 raise ValueError('Non-finite encoder output')
             with output.open('xb') as stream:
-                np.savez_compressed(stream, audio=af.values.numpy(), audio_timestamps=af.timestamps.numpy(), video=vf.values.numpy(), video_timestamps=vf.timestamps.numpy())
+                np.savez_compressed(stream, audio=af.values.numpy(), audio_timestamps=af.timestamps.numpy(), video=vf.values.numpy(), video_timestamps=vf.timestamps.numpy(), metadata_json=json.dumps({'audio': af.metadata, 'video': vf.metadata, 'media': media, 'face_quality': face_report, 'alignment': 'not validated'}))
             report.update(status='features_extracted', features_written=True, feature_seconds=time.perf_counter()-feature_start, audio_shape=list(af.values.shape), visual_shape=list(vf.values.shape), audio_provenance=audio_model.provenance, visual_provenance=video_model.provenance, warning='Separate features; cross-modal alignment not validated. Whisper padded timestamps are nominal.')
     except (MediaError, ValueError, OSError, RuntimeError) as exc:
         report['status'] = 'invalid_media' if isinstance(exc, MediaError) else 'error'
@@ -74,11 +74,12 @@ def main():
     parser.add_argument('--audio-checkpoint')
     parser.add_argument('--visual-checkpoint')
     parser.add_argument('--visual-sha256')
+    parser.add_argument('--visual-format', default='custom', choices=['custom', 'torchvision_imagenet1k_v1'])
     parser.add_argument('--authorized-models', action='store_true', help='Assert use of supplied model artifacts is authorized')
     parser.add_argument('--output', help='Explicit new path for private feature output (.npz); do not commit it')
     parser.add_argument('--device', default='cpu', choices=['cpu', 'cuda', 'auto'])
     args = parser.parse_args()
-    report = run(args.video, audio_checkpoint=args.audio_checkpoint, visual_checkpoint=args.visual_checkpoint, visual_sha256=args.visual_sha256, authorized=args.authorized_models, output=args.output, device=args.device)
+    report = run(args.video, audio_checkpoint=args.audio_checkpoint, visual_checkpoint=args.visual_checkpoint, visual_sha256=args.visual_sha256, visual_format=args.visual_format, authorized=args.authorized_models, output=args.output, device=args.device)
     print(json.dumps(report, indent=2))
     return 0 if report['status'] == 'features_extracted' else 2
 
