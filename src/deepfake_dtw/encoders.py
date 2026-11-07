@@ -100,3 +100,58 @@ class VisualEncoder:
             features = torch.cat([self.model(self.transform(batch.to(self.device))).cpu()
                                   for batch in video.values.split(8)], dim=0)
         return Prepared(features, video.timestamps.clone(), {**video.metadata, **self.provenance})
+
+
+DINOV2_COMMIT = '7764ea0f912e53c92e82eb78a2a1631e92725fc8'
+DINOV2_SOURCE = 'https://github.com/facebookresearch/dinov2'
+DINOV2_WEIGHTS = 'https://dl.fbaipublicfiles.com/dinov2/dinov2_vits14/dinov2_vits14_pretrain.pth'
+
+
+def verify_dinov2_source(path: str) -> None:
+    """Require the pinned official checkout without local changes before executing it."""
+    import subprocess
+    root = Path(path).resolve()
+    try:
+        top = subprocess.run(['git', '-C', str(root), 'rev-parse', '--show-toplevel'], check=True, capture_output=True, text=True, timeout=10).stdout.strip()
+        head = subprocess.run(['git', '-C', str(root), 'rev-parse', 'HEAD'], check=True, capture_output=True, text=True, timeout=10).stdout.strip()
+        status = subprocess.run(['git', '-C', str(root), 'status', '--porcelain', '--untracked-files=all'], check=True, capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ValueError('DINOv2 source must be a clean pinned Git checkout') from exc
+    if Path(top).resolve() != root or head != DINOV2_COMMIT or status:
+        raise ValueError('DINOv2 source must be a clean checkout at the pinned commit')
+
+
+class DinoVisualEncoder:
+    """Official DINOv2 ViT-S/14; never downloads or falls back to random weights."""
+    def __init__(self, *, device: torch.device, checkpoint: str, sha256: str, source_dir: str):
+        if not checkpoint or not sha256 or not source_dir:
+            raise ValueError('DINOv2 requires a local checkpoint, full SHA-256 and pinned source checkout')
+        path = Path(checkpoint)
+        if not path.is_file():
+            raise FileNotFoundError('DINOv2 checkpoint not found')
+        if len(sha256) != 64 or any(c not in '0123456789abcdef' for c in sha256.lower()):
+            raise ValueError('DINOv2 requires a full SHA-256')
+        with path.open('rb') as stream:
+            digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+        if digest != sha256.lower():
+            raise ValueError('DINOv2 checkpoint SHA-256 mismatch')
+        verify_dinov2_source(source_dir)
+        # Local pinned code only. pretrained=False prevents torch.hub network downloads;
+        # the instance is not exposed until the supplied state has loaded strictly.
+        model = torch.hub.load(str(Path(source_dir).resolve()), 'dinov2_vits14', source='local', pretrained=False)
+        model.load_state_dict(torch.load(path, map_location='cpu', weights_only=True), strict=True)
+        self.model = model.to(device).eval()
+        self.device = device
+        self.transform = ResNet18_Weights.IMAGENET1K_V1.transforms()
+        self.provenance = {'model': 'DINOv2 ViT-S/14 backbone', 'weights': 'user_supplied', 'checkpoint_sha256': digest,
+                           'source': DINOV2_WEIGHTS, 'code_source': DINOV2_SOURCE, 'code_commit': DINOV2_COMMIT,
+                           'preprocessing': '224 mouth crop; torchvision ImageNet resize 256, center crop 224 and normalize',
+                           'note': 'User-supplied full digest checks integrity against their copy, not an independently published full upstream hash; generic visual features are not AV aligned.'}
+
+    def extract(self, video: Prepared) -> Prepared:
+        if video is None or video.values.ndim != 4 or video.values.shape[1:] != (3, 224, 224) or len(video.values) == 0:
+            raise ValueError('Prepared RGB video frames are required')
+        with torch.inference_mode():
+            features = torch.cat([self.model(self.transform(batch.to(self.device))).cpu()
+                                  for batch in video.values.split(8)], dim=0)
+        return Prepared(features, video.timestamps.clone(), {**video.metadata, **self.provenance})

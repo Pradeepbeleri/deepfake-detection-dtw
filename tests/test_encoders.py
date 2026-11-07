@@ -102,3 +102,34 @@ def test_visual_inference_batches_preserve_order():
     assert encoder.model.sizes == [8, 8, 3]
     assert torch.equal(out.values[:, 0], torch.arange(19, dtype=torch.float32))
     assert torch.equal(out.timestamps, timestamps)
+
+
+def test_dinov2_requires_checkpoint_and_verified_local_source(tmp_path):
+    from deepfake_dtw.encoders import DinoVisualEncoder, verify_dinov2_source
+    with pytest.raises(ValueError, match='requires'):
+        DinoVisualEncoder(device=torch.device('cpu'), checkpoint='', sha256='', source_dir='')
+    with pytest.raises(FileNotFoundError):
+        DinoVisualEncoder(device=torch.device('cpu'), checkpoint=str(tmp_path/'missing'), sha256='a'*64, source_dir=str(tmp_path))
+    with pytest.raises(ValueError, match='checkout'):
+        verify_dinov2_source(str(tmp_path))
+
+
+def test_dinov2_checkpoint_loading_requires_hash_and_no_download(tmp_path, monkeypatch):
+    import hashlib
+    import deepfake_dtw.encoders as module
+    checkpoint = tmp_path / 'fixture.pth'
+    torch.save(torch.nn.Linear(2, 2).state_dict(), checkpoint)
+    digest = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
+    monkeypatch.setattr(module, 'verify_dinov2_source', lambda _: None)
+    calls = []
+    def fake_hub_load(path, name, **kwargs):
+        calls.append((name, kwargs))
+        return torch.nn.Linear(2, 2)
+    monkeypatch.setattr(torch.hub, 'load', fake_hub_load)
+    with pytest.raises(ValueError, match='SHA-256 mismatch'):
+        module.DinoVisualEncoder(device=torch.device('cpu'), checkpoint=str(checkpoint), sha256='0'*64, source_dir=str(tmp_path))
+    assert calls == []
+    encoder = module.DinoVisualEncoder(device=torch.device('cpu'), checkpoint=str(checkpoint), sha256=digest, source_dir=str(tmp_path))
+    assert calls == [('dinov2_vits14', {'source': 'local', 'pretrained': False})]
+    assert encoder.provenance['checkpoint_sha256'] == digest
+    # A generated Linear fixture checks loading behavior, not DINOv2 performance.
