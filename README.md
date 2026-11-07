@@ -41,7 +41,7 @@ FFmpeg and ffprobe must be installed and available on PATH. The tested environme
 
 The command writes a JSON report to stdout and exits with code 2 when no features were extracted, including `checkpoint_unavailable`. To request private feature output, provide `--audio-checkpoint /path/to/tiny.en.pt --visual-checkpoint /path/to/resnet-state.pt --visual-sha256 <sha256> --authorized-models --output /private/path/features.npz`. The supplied visual state dict must match torchvision ResNet-18 with an identity classifier, must have appropriate provenance and permission, and must be loadable with PyTorch's weights-only loader. User-supplied SHA-256 verifies integrity, not license or training quality. No visual checkpoint is provided. Do not commit media, model weights, reports containing sensitive information, or features. The flags are an explicit assertion of authorization; the tool cannot establish legal rights.
 
-The decoder accepts local MP4 with exactly one audio and one video stream, duration at most 30 seconds, at most 100 MB, at most 1920×1080 and at most 200 MB of decoded RGB frames. It rejects missing or discontinuous audio timestamps and non-increasing video presentation timestamps. FFmpeg converts audio to 16 kHz mono; ffprobe presentation ticks multiplied by each stream's time base retain a common container timeline. Positive `audio_minus_video_seconds` means audio starts later. This is a stream-start offset, **not** a measured lip-sync delay; AAC priming, padding and edit lists can affect interpretation. Frames are selected by timestamp at 25 Hz, then resized to 224×224. The report includes source timestamps, selection indices and transform metadata. Media remains in memory; no source frames are persisted by default.
+The decoder accepts local MP4 with exactly one audio and one video stream, duration at most 30 seconds, at most 100 MB, at most 1920×1080 and at most 200 MB of decoded RGB frames after scaling to 224×224. It rejects missing or discontinuous audio timestamps and non-increasing video presentation timestamps. FFmpeg converts audio to 16 kHz mono; ffprobe presentation ticks multiplied by each stream's time base retain a common container timeline. Positive `audio_minus_video_seconds` means audio starts later. This is a stream-start offset, **not** a measured lip-sync delay; AAC priming, padding and edit lists can affect interpretation. Frames are selected by timestamp at 25 Hz, then resized to 224×224. The report includes source timestamps, selection indices and transform metadata. Media remains in memory; no source frames are persisted by default.
 
 MediaPipe Face Mesh runs per frame, using mouth landmark bounds. Missing faces are skipped; multiple faces or continuity loss prevent extraction. Up to three consecutive missing frames can be followed by reacquisition with an IoU check; this is a conservative heuristic, not reliable identity or active-speaker tracking. Crops are not fabricated, and quality flags must be inspected. Neither real-person accuracy nor a valid end-to-end pretrained feature run has been verified. The current CLI does not implement DTW, deepfake classification or scores.
 
@@ -56,3 +56,49 @@ After permission is confirmed, obtain the file directly from its upstream source
 [Whisper upstream](https://github.com/openai/whisper/tree/86098128c0b4f24f0e2aa2994de830614b474227) releases code and weights under MIT. The pinned source names the official `tiny.en` SHA-256 `d3dd57d32accea0b295c96e26691aa14d8822fac7d9d27d5dc00b4ca2826dd03`. This environment's proxy denied the official checkpoint host. Once access is allowed, obtain the artifact from the official URL listed in the source, verify the full SHA-256 with `sha256sum`, and supply it as `--audio-checkpoint`; no untrusted mirror, disabled verification, or automatic random fallback is used.
 
 Use a short MP4 recorded with explicit subject consent and authorization for this project, placed outside the repository; do not upload restricted datasets. Run the command above with both authorized checkpoints, `--authorized-models`, an explicit private output path and the visual format. Redirect stdout to a private report file. The NPZ output includes feature arrays, timestamp arrays, and a `metadata_json` string containing preprocessing, face quality, model hashes and provenance. Review privacy and retention before storing or sharing. Real-media validation and pretrained extraction are not yet verified.
+
+## Private 10–15 second validation
+
+This workflow is prepared but has not been validated with a real person or pretrained checkpoints. Recording and processing require the participant's informed permission and the university's applicable privacy rules. The separate Whisper and ResNet features are **not** validated as aligned and do not detect deepfakes.
+
+1. Ask one consenting adult to record 10–15 seconds of their own face while speaking clearly. Keep the mouth visible, use steady lighting, avoid other people and background speech, and save the recording as MP4 with its original sound. Do not use someone else's recording without permission. The current implementation rejects multiple faces and accepts at least 80% detected mouth crops; this threshold is provisional and not a validated quality standard. Supported inputs are at most 30 seconds, 100 MB and 1920×1080; timestamp issues and unsupported media are reported explicitly.
+2. Place files **outside the repository** in the private directory `/workspace/deepfake-private/`:
+   - `talking-face.mp4`: the consented recording.
+   - `tiny.en.pt`: official Whisper tiny.en checkpoint.
+   - `resnet18-f37072fd.pth`: official torchvision ResNet-18 ImageNet1K V1 checkpoint.
+
+   You can attach files to this conversation for transfer into that directory or use your approved workspace file-transfer mechanism. Do not put recordings, checkpoint files, reports or extracted features in Git. The directory was created with owner-only permissions in this workspace; in a new environment run `mkdir -p -m 700 /workspace/deepfake-private` and verify access controls. The local `.gitignore` also excludes `.mp4`, `.pt`, `.pth` and `.npz`, but privacy does not depend on Git ignore rules.
+3. Whisper's [official source code](https://github.com/openai/whisper/blob/86098128c0b4f24f0e2aa2994de830614b474227/whisper/__init__.py) names [the tiny.en checkpoint](https://openaipublic.azureedge.net/main/whisper/models/d3dd57d32accea0b295c96e26691aa14d8822fac7d9d27d5dc00b4ca2826dd03/tiny.en.pt) and its full SHA-256. Its [code and weights are MIT licensed](https://github.com/openai/whisper/blob/86098128c0b4f24f0e2aa2994de830614b474227/README.md). Download only from that official URL using a trusted connection where access is permitted, and put it at the path above. This environment's proxy returned 403; do not bypass it or use an untrusted mirror. Verify:
+
+   ```sh
+   sha256sum /workspace/deepfake-private/tiny.en.pt
+   ```
+
+   The full hash must be `d3dd57d32accea0b295c96e26691aa14d8822fac7d9d27d5dc00b4ca2826dd03`.
+4. The official torchvision source lists [ResNet-18 ImageNet1K V1](https://download.pytorch.org/models/resnet18-f37072fd.pth), with filename hash prefix `f37072fd`. [Torchvision warns that weights may carry separate dataset-derived terms](https://github.com/pytorch/vision/blob/v0.20.1/README.md#pre-trained-model-license). Obtain institutional review for the exact artifact and intended use before using it; the library license alone does not establish that permission. If approved, obtain the file directly from the official URL and place it at the path above. Compute its complete SHA-256 locally. It must start with `f37072fd`; this eight-character upstream prefix is weaker than an independently published full digest and does not by itself verify licensing. Retain the full computed hash with your provenance record.
+5. After the files and permissions are in place, run the **local, network-free prerequisite check**:
+
+   ```sh
+   VISUAL_SHA=$(sha256sum /workspace/deepfake-private/resnet18-f37072fd.pth | cut -d' ' -f1)
+   .venv/bin/python -m deepfake_dtw.readiness \
+     --video /workspace/deepfake-private/talking-face.mp4 \
+     --audio-checkpoint /workspace/deepfake-private/tiny.en.pt \
+     --visual-checkpoint /workspace/deepfake-private/resnet18-f37072fd.pth \
+     --visual-sha256 "$VISUAL_SHA" --authorized-models
+   ```
+
+   `ready_for_offline_validation` means files, hashes, MP4 metadata and tools passed preliminary checks; it does **not** mean model loading, face coverage or offline inference has passed. `--authorized-models` is your assertion of reviewed permissions; the software cannot verify legal rights.
+6. Run actual CPU extraction and keep both output and report private:
+
+   ```sh
+   .venv/bin/python -m deepfake_dtw.extract /workspace/deepfake-private/talking-face.mp4 \
+     --audio-checkpoint /workspace/deepfake-private/tiny.en.pt \
+     --visual-checkpoint /workspace/deepfake-private/resnet18-f37072fd.pth \
+     --visual-format torchvision_imagenet1k_v1 --visual-sha256 "$VISUAL_SHA" \
+     --authorized-models --device cpu --output /workspace/deepfake-private/features.npz \
+     > /workspace/deepfake-private/extraction-report.json
+   ```
+
+   Use a new output filename for each run; existing feature files are never overwritten. Review the JSON for `features_extracted`, face coverage, time bases, offsets, model hashes, CPU inference time and peak process RSS. The feature file includes tensors, timestamps and metadata and is created with owner-only permissions. Repeat the same extraction with a new output path and network disabled using locally installed dependencies and weights before describing the **feature extraction** demonstration as offline-tested. An offline deepfake detector cannot be demonstrated until a real classifier exists and has been evaluated.
+
+Frame decode scales each input frame to 224×224 before buffering to accommodate longer clips, potentially distorting aspect ratio. Face crops, timestamps and coverage must be evaluated on the supplied clip. The visual model processes crops in batches of eight to reduce activation memory. Peak RSS measures the Python process, not FFmpeg child-process memory; model loading and audio and visual inference times are reported separately. No actual real-video or pretrained CPU measurements are yet available.

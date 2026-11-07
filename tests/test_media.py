@@ -96,3 +96,78 @@ def test_audio_leads_video_and_long_occlusion(tmp_path):
     crops, quality = crop_mouths(video, lambda _: next(responses))
     assert quality['frames'][-1]['status'] == 'tracking_lost'
     assert len(crops.values) == 1
+
+
+def test_offline_preflight_never_claims_demo_ready(tmp_path):
+    from deepfake_dtw.readiness import check
+    report = check(tmp_path / 'no.mp4', tmp_path / 'no.pt', tmp_path / 'no.pth', '0' * 64, True)
+    assert report['video']['status'] == 'missing'
+    assert report['audio_checkpoint']['status'] == 'missing'
+    assert report['visual_checkpoint']['status'] == 'missing'
+    assert not report['ready_for_offline_validation']
+    assert not report['offline_demonstration_ready']
+    assert not report['network_used']
+
+
+def test_longer_640x480_video_bounded_decode(tmp_path):
+    path = tmp_path / 'ten-seconds.mp4'
+    ffmpeg('-f', 'lavfi', '-i', 'color=size=640x480:rate=25:duration=10', '-f', 'lavfi', '-i', 'sine=sample_rate=16000:duration=10', '-c:v', 'mpeg4', '-c:a', 'aac', str(path))
+    audio, video, metadata = read_mp4(path)
+    assert metadata['source_frames'] == 250
+    assert metadata['source_dimensions'] == [640, 480]
+    assert video.values.shape == (250, 3, 224, 224)
+    assert video.timestamps[-1].item() == pytest.approx(9.96)
+    assert len(audio.values) >= 160000
+
+
+def test_private_output_metadata_and_file_mode(tmp_path, monkeypatch):
+    import json
+    import os
+    import deepfake_dtw.extract as extraction
+    from deepfake_dtw.preprocessing import Prepared
+
+    # Test doubles exercise packaging only; they are not pretrained inference.
+    audio = Prepared(torch.ones(4), torch.arange(4, dtype=torch.float64) / 16000, {'output_rate_hz': 16000})
+    video = Prepared(torch.ones(2, 3, 224, 224), torch.tensor([0., .04], dtype=torch.float64), {})
+    monkeypatch.setattr(extraction, 'read_mp4', lambda _: (audio, video, {'source_frames': 2}))
+    class Detector:
+        def close(self): pass
+    monkeypatch.setattr(extraction, 'FaceMeshDetector', Detector)
+    quality = {'detection_fraction': 1.0, 'frames': [{'status': 'detected'}, {'status': 'detected'}]}
+    monkeypatch.setattr(extraction, 'crop_mouths', lambda *_: (video, quality))
+    class Encoder:
+        def __init__(self, **kwargs): self.provenance = {'weights': 'test-double'}
+        def extract(self, prepared): return Prepared(torch.ones(1, 2), prepared.timestamps, {'fixture': True})
+    monkeypatch.setattr(extraction, 'WhisperAudioEncoder', Encoder)
+    monkeypatch.setattr(extraction, 'VisualEncoder', Encoder)
+    monkeypatch.setattr(extraction, '_sha256', lambda p: extraction.TINY_EN_SHA256 if str(p).endswith('audio') else 'a' * 64)
+    ap, vp, out = tmp_path/'audio', tmp_path/'visual', tmp_path/'private.npz'
+    ap.touch(); vp.touch()
+    report = extraction.run('ignored', audio_checkpoint=str(ap), visual_checkpoint=str(vp), visual_sha256='a'*64, authorized=True, output=str(out))
+    assert report['status'] == 'features_extracted'
+    assert report['classification'] == 'not implemented'
+    assert os.stat(out).st_mode & 0o077 == 0
+    with np.load(out, allow_pickle=False) as artifact:
+        metadata = json.loads(str(artifact['metadata_json']))
+        assert metadata['alignment'] == 'not validated'
+        assert metadata['face_quality']['detection_fraction'] == 1.0
+    blocked = extraction.run('ignored', audio_checkpoint=str(ap), visual_checkpoint=str(vp), visual_sha256='a'*64, authorized=True, output=str(out))
+    assert blocked['status'] == 'error'
+    assert 'already exists' in blocked['reason']
+
+
+def test_insufficient_face_coverage_blocks_features(tmp_path, monkeypatch):
+    import deepfake_dtw.extract as extraction
+    from deepfake_dtw.preprocessing import Prepared
+    frame = Prepared(torch.ones(1, 3, 224, 224), torch.tensor([0.]), {})
+    monkeypatch.setattr(extraction, 'read_mp4', lambda _: (frame, frame, {}))
+    class Detector:
+        def close(self): pass
+    monkeypatch.setattr(extraction, 'FaceMeshDetector', Detector)
+    monkeypatch.setattr(extraction, 'crop_mouths', lambda *_: (frame, {'detection_fraction': .25, 'frames': [{'status': 'detected'}]}))
+    monkeypatch.setattr(extraction, '_sha256', lambda p: extraction.TINY_EN_SHA256 if str(p).endswith('audio') else 'a' * 64)
+    ap, vp = tmp_path/'audio', tmp_path/'visual'
+    ap.touch(); vp.touch()
+    result = extraction.run('ignored', audio_checkpoint=str(ap), visual_checkpoint=str(vp), visual_sha256='a'*64, authorized=True, output=str(tmp_path/'out.npz'))
+    assert result['status'] == 'face_unusable'
+    assert not (tmp_path/'out.npz').exists()

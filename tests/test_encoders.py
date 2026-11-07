@@ -80,3 +80,25 @@ def test_official_visual_transform_is_applied_before_encoding():
     assert output.shape == (1, 3, 224, 224)
     assert output[0, 0, 0, 0].item() == pytest.approx((1 - .485) / .229)
     assert torch.equal(encoder.extract(video).timestamps, video.timestamps)
+
+
+def test_visual_inference_batches_preserve_order():
+    from deepfake_dtw.preprocessing import Prepared
+    class Observe(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.sizes = []
+        def forward(self, x):
+            self.sizes.append(len(x))
+            return x[:, 0, 0, 0].unsqueeze(1)
+    encoder = VisualEncoder.__new__(VisualEncoder)
+    encoder.device = torch.device('cpu')
+    encoder.model = Observe()
+    encoder.transform = torch.nn.Identity()
+    encoder.provenance = {}
+    frames = torch.arange(19, dtype=torch.float32).view(19, 1, 1, 1).expand(-1, 3, 224, 224)
+    timestamps = torch.arange(19, dtype=torch.float64) / 25
+    out = encoder.extract(Prepared(frames, timestamps, {}))
+    assert encoder.model.sizes == [8, 8, 3]
+    assert torch.equal(out.values[:, 0], torch.arange(19, dtype=torch.float32))
+    assert torch.equal(out.timestamps, timestamps)
