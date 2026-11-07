@@ -121,22 +121,23 @@ def split(records, seed=42):
     return audit_artifacts(result)
 
 
-def load(path, require_partition=True):
+def load(path, require_partition=True, feature_partitions=None):
     try:
         with open(path, encoding='utf-8') as f:
             records = json.load(f)
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError(f'Cannot read manifest: {exc}') from exc
     validate(records, require_partition=require_partition)
-    return audit_artifacts(records)
+    return audit_artifacts(records, feature_partitions=feature_partitions)
 
 
-def audit_artifacts(records):
+def audit_artifacts(records, feature_partitions=None):
     from .training import read_features
     feature_owners = {}
     media_owners = {}
     for record in records:
-        read_features(record['feature_path'])
+        if feature_partitions is None or record.get('partition') in feature_partitions:
+            read_features(record['feature_path'])
         with open(record['video_path'], 'rb') as stream:
             media_digest = hashlib.file_digest(stream, 'sha256').hexdigest()
         partition = record.get('partition')

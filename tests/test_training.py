@@ -89,6 +89,11 @@ def test_train_evaluate_only_synthetic_fixture(tmp_path):
     assert out.stat().st_mode & 0o077 == 0
     result=evaluate(str(manifest),str(out))
     assert result['videos']==4 and result['partition']=='test'
+    assert result['class_counts']=={'real':2,'fake':2}
+    assert result['threshold']==state['threshold']
+    assert result['threshold_source'].startswith('validation video-level')
+    assert len(result['false_positive_video_ids']) == result['confusion_matrix'][0][1]
+    assert len(result['false_negative_video_ids']) == result['confusion_matrix'][1][0]
     with pytest.raises(FileExistsError): train(str(manifest),str(out),epochs=1)
     feature_path = Path(rows[0]['feature_path']); original = feature_path.read_bytes()
     with feature_path.open('ab') as stream: stream.write(b'modified')
@@ -181,3 +186,30 @@ def test_training_and_alignment_clis_on_synthetic_fixtures(tmp_path):
     assert trained['best_epoch']==1
     assert scored['videos']==4
     assert aligned['best_epoch']==1
+
+
+def test_threshold_selection_and_single_class_validation(tmp_path):
+    from deepfake_dtw.training import choose_threshold
+    assert choose_threshold([0,0,1,1],[.1,.2,.8,.9]) == pytest.approx(.8)
+    with pytest.raises(ValueError, match='both validation classes'):
+        choose_threshold([0,0],[.1,.2])
+    rows=records(tmp_path)
+    for r in rows:
+        if r['partition']=='validation': r['label']='real'
+    manifest=tmp_path/'manifest.json'; manifest.write_text(json.dumps(rows))
+    with pytest.raises(ValueError, match='each require both classes'):
+        train(str(manifest),str(tmp_path/'bad.pt'),epochs=1)
+    assert not (tmp_path/'bad.pt').exists()
+
+
+def test_training_does_not_parse_test_feature_arrays(tmp_path, monkeypatch):
+    import deepfake_dtw.training as training
+    rows=records(tmp_path); manifest=tmp_path/'manifest.json'; manifest.write_text(json.dumps(rows))
+    test_paths={r['feature_path'] for r in rows if r['partition']=='test'}
+    original=training.read_features
+    def guarded(path):
+        assert path not in test_paths, 'test feature arrays must not be parsed during training'
+        return original(path)
+    monkeypatch.setattr(training,'read_features',guarded)
+    result=training.train(str(manifest),str(tmp_path/'head.pt'),epochs=1,hidden=4)
+    assert 'validation_selected_threshold' in result
