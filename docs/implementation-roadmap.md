@@ -16,4 +16,23 @@ Each milestone ends with reviewable evidence and must respect license/data acces
 8. **Frontend:** responsive React/TypeScript design system and actual API integration.
 9. **End-to-end:** functional, accessibility, privacy/security and deployment tests; demonstrate only supported behavior.
 
-Milestone 2A is documented; Milestones 2B–9 are unimplemented. Expensive training may use Colab; availability and runtime compatibility must be tested, not assumed.
+Milestone 2B synthetic extraction is implemented; pretrained extraction and Milestones 3–9 remain unverified or unimplemented. Expensive training may use Colab; availability and runtime compatibility must be tested, not assumed.
+
+## Demonstration status (7 November 2026)
+
+| Area | Status and evidence | Remaining work |
+| --- | --- | --- |
+| Research and licensing | 2A documented; AV-HuBERT use restricted and intended scope needs review | Resolve encoder, checkpoint and dataset permissions; obtain paper and clarify published variants |
+| Feature extraction | 2B synthetic CPU audio/video extraction and automated tests; both tested encoders uninitialized | Verify permitted pretrained Whisper checkpoint, real media preprocessing, temporal correspondence and useful learned features |
+| Detector and DTW | Proposed only | Train and evaluate independently implemented baseline, validate alignment and compare DTW under controlled delays |
+| Evaluation clips | Not prepared | Obtain permitted genuine and manipulated clips, record provenance, consent, labels and held-out splits |
+| API and interface | Proposed only | Implement real inference, unavailable/error states and accessible premium interface |
+| Live offline demonstration | Not available | Package approved model and assets in advance, test CPU fallback against resource/latency limits; separately label any recorded fallback as recorded, never live inference |
+
+The priority is a reproducible end-to-end detector with measured limitations; no classifier, score, frontend, or live inference demonstration exists yet. GPU and network failure procedures must be tested with actual artifacts before the faculty demonstration.
+
+### 2B validation record
+
+On 7 November 2026, Linux x86-64, Python 3.12.14, CPU, two PyTorch threads: `.venv/bin/python -m pytest -q` passed 9 tests. `.venv/bin/python -m deepfake_dtw.smoke --audio-mode uninitialized --device cpu` produced audio `[1, 1500, 384]`, video `[25, 512]` and wiring-only concatenation `[25, 896]`; finite and exact repeatability checks passed. The final smoke measured 2.328 seconds including setup, two forward passes and preprocessing, and peak process RSS 910,284 KiB; these numbers are environment-specific, not latency or memory guarantees. CUDA was not tested. PyTorch 2.5.1+cpu, torchvision 0.20.1+cpu, Whisper 20250625 at commit `86098128c0b4f24f0e2aa2994de830614b474227`, NumPy 2.2.6 and SciPy 1.15.3 were used. Full installed version snapshot: [requirements-lock.txt](../requirements-lock.txt).
+
+Both encoders were explicitly uninitialized (seed 17); no checkpoint was loaded. The official tiny.en expected SHA-256 is `d3dd57d32accea0b295c96e26691aa14d8822fac7d9d27d5dc00b4ca2826dd03`; an HTTP HEAD to its source host returned proxy 403. The hash is an upstream expected value, not a hash of a downloaded artifact. The pretrained branch and its output remain unverified until the permitted artifact can be obtained. Audio timestamps on padded output are nominal, not proof of local alignment. No useful detection capability is demonstrated.

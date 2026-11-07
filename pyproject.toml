@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "deepfake-dtw"
+version = "0.1.0"
+requires-python = ">=3.12,<3.13"
+dependencies = ["torch==2.5.1", "torchvision==0.20.1", "numpy==2.2.6", "scipy==1.15.3", "openai-whisper @ git+https://github.com/openai/whisper.git@86098128c0b4f24f0e2aa2994de830614b474227"]
+
+[project.optional-dependencies]
+test = ["pytest==8.3.5"]
