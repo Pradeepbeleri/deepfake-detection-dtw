@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from .encoders import TINY_EN_SHA256, VisualEncoder, WhisperAudioEncoder, select_device
+from .encoders import TINY_EN_SHA256, DinoVisualEncoder, VisualEncoder, WhisperAudioEncoder, select_device
 from .faces import FaceMeshDetector, crop_mouths
 from .media import MediaError, read_mp4
 
@@ -21,7 +21,7 @@ def _sha256(path):
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
-def run(path, *, audio_checkpoint=None, visual_checkpoint=None, visual_sha256=None, visual_format='custom', authorized=False, output=None, device='cpu'):
+def run(path, *, audio_checkpoint=None, visual_checkpoint=None, visual_sha256=None, visual_format='custom', dinov2_source=None, authorized=False, output=None, device='cpu'):
     started = time.perf_counter()
     report = {'schema_version': 1, 'status': 'error', 'classification': 'not implemented', 'alignment': 'not validated', 'features_written': False}
     try:
@@ -57,7 +57,10 @@ def run(path, *, audio_checkpoint=None, visual_checkpoint=None, visual_sha256=No
             chosen = select_device(device)
             feature_start = time.perf_counter()
             audio_model = WhisperAudioEncoder(device=chosen, mode='pretrained', checkpoint=audio_checkpoint)
-            video_model = VisualEncoder(device=chosen, checkpoint=visual_checkpoint, sha256=visual_sha256, checkpoint_format=visual_format)
+            if visual_format == 'dinov2_vits14':
+                video_model = DinoVisualEncoder(device=chosen, checkpoint=visual_checkpoint, sha256=visual_sha256, source_dir=dinov2_source)
+            else:
+                video_model = VisualEncoder(device=chosen, checkpoint=visual_checkpoint, sha256=visual_sha256, checkpoint_format=visual_format)
             report['model_load_seconds'] = time.perf_counter() - feature_start
             inference_start = time.perf_counter()
             af = audio_model.extract(audio)
@@ -95,12 +98,13 @@ def main():
     parser.add_argument('--audio-checkpoint')
     parser.add_argument('--visual-checkpoint')
     parser.add_argument('--visual-sha256')
-    parser.add_argument('--visual-format', default='custom', choices=['custom', 'torchvision_imagenet1k_v1'])
+    parser.add_argument('--visual-format', default='custom', choices=['custom', 'torchvision_imagenet1k_v1', 'dinov2_vits14'])
+    parser.add_argument('--dinov2-source', help='Clean local checkout of the pinned official DINOv2 source')
     parser.add_argument('--authorized-models', action='store_true', help='Assert use of supplied model artifacts is authorized')
     parser.add_argument('--output', help='Explicit new path for private feature output (.npz); do not commit it')
     parser.add_argument('--device', default='cpu', choices=['cpu', 'cuda', 'auto'])
     args = parser.parse_args()
-    report = run(args.video, audio_checkpoint=args.audio_checkpoint, visual_checkpoint=args.visual_checkpoint, visual_sha256=args.visual_sha256, visual_format=args.visual_format, authorized=args.authorized_models, output=args.output, device=args.device)
+    report = run(args.video, audio_checkpoint=args.audio_checkpoint, visual_checkpoint=args.visual_checkpoint, visual_sha256=args.visual_sha256, visual_format=args.visual_format, dinov2_source=args.dinov2_source, authorized=args.authorized_models, output=args.output, device=args.device)
     print(json.dumps(report, indent=2))
     return 0 if report['status'] == 'features_extracted' else 2
 

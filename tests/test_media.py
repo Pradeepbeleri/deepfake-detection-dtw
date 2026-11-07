@@ -26,6 +26,7 @@ def test_media_real_decoding_and_determinism(sample):
     a2, v2, _ = read_mp4(sample)
     assert len(v.values) == meta['source_frames'] == 25
     assert len(a.values) >= 16000
+    assert meta['audio_decode_seconds'] >= 0 and meta['video_decode_seconds'] >= 0
     assert meta['audio_minus_video_seconds'] == pytest.approx(0, abs=.001)
     assert torch.equal(a.values, a2.values) and torch.equal(v.values, v2.values)
     assert torch.equal(v.timestamps, v2.timestamps)

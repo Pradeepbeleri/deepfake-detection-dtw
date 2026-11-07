@@ -102,3 +102,39 @@ This workflow is prepared but has not been validated with a real person or pretr
    Use a new output filename for each run; existing feature files are never overwritten. Review the JSON for `features_extracted`, face coverage, time bases, offsets, model hashes, CPU inference time and peak process RSS. The feature file includes tensors, timestamps and metadata and is created with owner-only permissions. Repeat the same extraction with a new output path and network disabled using locally installed dependencies and weights before describing the **feature extraction** demonstration as offline-tested. An offline deepfake detector cannot be demonstrated until a real classifier exists and has been evaluated.
 
 Frame decode scales each input frame to 224×224 before buffering to accommodate longer clips, potentially distorting aspect ratio. Face crops, timestamps and coverage must be evaluated on the supplied clip. The visual model processes crops in batches of eight to reduce activation memory. Peak RSS measures the Python process, not FFmpeg child-process memory; model loading and audio and visual inference times are reported separately. No actual real-video or pretrained CPU measurements are yet available.
+
+### DINOv2 option and large-file transfer
+
+If the ResNet weight terms cannot be confirmed, the ordinary [DINOv2 ViT-S/14 backbone](https://github.com/facebookresearch/dinov2/tree/7764ea0f912e53c92e82eb78a2a1631e92725fc8) is a candidate: upstream states that the ordinary DINOv2 code and model weights are Apache 2.0. The X-ray and cell variants have different restrictions. DINOv2 is a general visual encoder and is not a pretrained audio-lip synchronization model. Check consent, deployment context and license conditions independently. Its [official backbone weights](https://dl.fbaipublicfiles.com/dinov2/dinov2_vits14/dinov2_vits14_pretrain.pth) are blocked by this environment's proxy and have not been tested here. The official source checkout is locally pinned to `7764ea0f912e53c92e82eb78a2a1631e92725fc8` at `/workspace/deepfake-private/dinov2-src`. In another environment, obtain it from the official GitHub URL and check out that exact commit. The loader rejects a dirty or differently pinned checkout and never fetches weights itself.
+
+The current attachment transfer supports at most 32 MiB per file. If the official Whisper or DINOv2 file was downloaded on your own machine through an allowed connection, compute and retain each complete SHA-256, then split each file into pieces smaller than 32 MiB and attach **all** pieces. For example, on Linux or macOS from the directory holding the two original files:
+
+```sh
+sha256sum tiny.en.pt dinov2_vits14_pretrain.pth
+split -b 24000000 tiny.en.pt tiny.en.part.
+split -b 24000000 dinov2_vits14_pretrain.pth dinov2.part.
+```
+
+On macOS use `shasum -a 256` if `sha256sum` is unavailable. Send the pieces and the two full hashes; do not send model weights or media in Git. After transfer, the pieces must be concatenated in lexical order into owner-only files under `/workspace/deepfake-private/`, and their complete hashes checked again **before loading**. Whisper's full hash is published in its upstream source and must match the value above. No independently published complete DINOv2 hash was established here; a locally computed hash checks transfer integrity, not independent source authenticity. Obtain that file directly from the official source using TLS and record provenance.
+
+Once both verified files are present, and use is authorized, set `DINO_SHA` to the recorded 64-character hash and run:
+
+```sh
+.venv/bin/python -m deepfake_dtw.readiness \
+  --video /workspace/deepfake-private/talking-face-5to17.mp4 \
+  --audio-checkpoint /workspace/deepfake-private/tiny.en.pt \
+  --visual-checkpoint /workspace/deepfake-private/dinov2_vits14_pretrain.pth \
+  --visual-format dinov2_vits14 --dinov2-source /workspace/deepfake-private/dinov2-src \
+  --visual-sha256 "$DINO_SHA" --authorized-models
+
+OMP_NUM_THREADS=2 .venv/bin/python -m deepfake_dtw.extract \
+  /workspace/deepfake-private/talking-face-5to17.mp4 \
+  --audio-checkpoint /workspace/deepfake-private/tiny.en.pt \
+  --visual-checkpoint /workspace/deepfake-private/dinov2_vits14_pretrain.pth \
+  --visual-format dinov2_vits14 --dinov2-source /workspace/deepfake-private/dinov2-src \
+  --visual-sha256 "$DINO_SHA" --authorized-models --device cpu \
+  --output /workspace/deepfake-private/features-dinov2.npz \
+  > /workspace/deepfake-private/extraction-report-dinov2.json
+```
+
+This optional DINOv2 loading path has only been tested with controlled test doubles and a verified source checkout; actual DINOv2 weight loading, feature shapes, CPU memory, and inference remain unverified. Full offline execution has also not been verified.
