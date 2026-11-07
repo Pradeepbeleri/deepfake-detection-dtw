@@ -213,3 +213,7 @@ Splitting groups the transitive closure of source/target identities, video IDs a
 The alignment harness learns separate audio and visual projections from timestamp-matched pairs, controlled ±0.2 s offset negatives and different-identity speech negatives within each partition. It reports validation loss and a controlled rigid-lag search versus fixed-zero and constant-guess reference. Labels assume timestamp synchronization and can be wrong for silence, coarticulation or natural delays. Whisper's nominal valid frames remain influenced by padded 30-second context. The harness does not prove semantic correspondence, does not use test data for fitting or validation, and must be independently evaluated on held-out identities before any DTW experiment. False negatives, class imbalance and dataset bias need scrutiny.
 
 For an unexecuted CPU Colab training template, see [Colab baseline](notebooks/colab_baseline.ipynb); Colab version, storage rights and runtime compatibility must be verified before use.
+
+## LAV-DF provisional dataset
+
+See [LAV-DF access, provenance and subset instructions](docs/dataset-acquisition.md#lav-df-provisional-workflow) and the [prepared Colab notebook](notebooks/lavdf_baseline.ipynb). The notebook requires interactive provider access and user-audited identity/source provenance. It has not been run against actual LAV-DF data. The user reports access is granted; this machine receives a network-policy 403 from Hugging Face, and no LAV-DF data has been transferred here. No LAV-DF baseline has been trained or evaluated.
