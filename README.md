@@ -163,3 +163,51 @@ On 7 November 2026, the supplied four-part Whisper file reassembled to 75,571,31
 The first run took 39.749 s total, including 2.384 s video decoding, 0.095 s audio decoding, 1.969 s face/mouth processing, 0.697 s model loading, 0.417 s Whisper inference and 29.898 s DINOv2 inference. Peak Python-process RSS was 1,414,464 KiB, excluding FFmpeg child processes; CPU execution used two threads, with xFormers disabled. The second run took 41.240 s and produced identical tensors. The excerpt had 300 mouth detections across 300 25 fps target frames; source-index and feature-timestamp mappings were checked. All visual feature timestamps fell within the 12.00475 s decoded-audio interval. Whisper's 1500 nominal timestamps extend to 29.98 s because of padding: only 601 nominal positions fall within the input duration, and all positions can depend on padded context through attention. Timestamp checks do not establish audio-visual embedding alignment.
 
 Python 3.12.14, PyTorch 2.5.1+cpu, torchvision 0.20.1+cpu, Whisper 20250625 at the pinned source revision, NumPy 1.26.4, SciPy 1.15.3, and MediaPipe 0.10.21 were used. Repeat extraction used local checkpoints without additional downloads, but network isolation was not enforced: `unshare -n` returned `Operation not permitted`. This is a pretrained feature extraction demonstration, not a deepfake detector or an offline faculty demonstration of detection.
+
+## Milestone 5A: private dataset and training foundation
+
+The classifier and correspondence code are implemented and exercised only with synthetic software-test fixtures. **No labeled dataset or trained deepfake detector is present.** Do not use a randomly initialized head for a real/fake result. This independent Whisper + DINOv2 approach is not a reproduction of AV-Lip-Sync+ and contains no DTW.
+
+Obtain a permission-cleared collection of genuine and manipulated MP4s with synchronized sound and known identity/source provenance. Review dataset access, consent, usage restrictions, audio provenance, manipulation types and rights before download or use; see [dataset notes](docs/research-feasibility.md). The single consented recording in this workspace is not a labeled real/fake training dataset. Store all videos, manifest files, features, checkpoints and reports outside the Git checkout, for example under `/workspace/deepfake-private/dataset/`.
+
+For each permitted clip, run the existing `deepfake_dtw.extract` command described above, using the **same authorized encoder checkpoints and settings**. The current training modules require 384-dimensional Whisper audio and 384-dimensional DINOv2 visual sequences; 512-dimensional ResNet features are not accepted. Check face-quality reports and timestamp/padding caveats; record failed or excluded clips rather than fabricating features. Create a private UTF-8 JSON array containing records with these fields:
+
+```json
+{
+  "sample_id": "globally-unique-clip-id",
+  "video_id": "original-or-manipulated-video-id",
+  "label": "real",
+  "source_identity": "globally-normalized-person-id",
+  "target_identity": null,
+  "source_recordings": ["globally-normalized-recording-id"],
+  "manipulation": "none",
+  "dataset": "permission-cleared-source",
+  "usage_rights": "description-of-granted-use",
+  "video_path": "/private/path/video.mp4",
+  "feature_path": "/private/path/extracted-features.npz",
+  "partition": null
+}
+```
+
+This is a schema illustration, not a dataset. For manipulated videos, use `label: "fake"` and supply the known `target_identity`, manipulation category, and *all* source recording IDs. Use the same `video_id` for temporal crops from the same video, and the same recording IDs for originals, derivatives, time-shifted copies, and source videos used in a manipulation. Normalize identity and recording IDs across all datasets before import; unknown identities or missing provenance cannot establish identity-disjoint evaluation. A rights string is an attestation, not automatic license verification. The importer checks file paths and MP4 stream headers, feature metadata and finite values, labels, duplicate IDs and cross-partition exact hashes; header probing is not a full decode. Derivative and identity leakage can still be missed if source metadata is incomplete or inconsistent. Verify each decoded clip and audit splits manually.
+
+```sh
+# Before splitting, omit partition or set it to null in every record.
+.venv/bin/python -m deepfake_dtw.dataset split /workspace/deepfake-private/dataset/manifest.json \
+  --output /workspace/deepfake-private/dataset/split.json --seed 42
+.venv/bin/python -m deepfake_dtw.dataset validate /workspace/deepfake-private/dataset/split.json
+
+# Only once real, permission-cleared labeled training and validation data are available:
+OMP_NUM_THREADS=2 .venv/bin/python -m deepfake_dtw.training train \
+  /workspace/deepfake-private/dataset/split.json /workspace/deepfake-private/dataset/head.pt --seed 42 --epochs 10
+OMP_NUM_THREADS=2 .venv/bin/python -m deepfake_dtw.training evaluate \
+  /workspace/deepfake-private/dataset/split.json /workspace/deepfake-private/dataset/head.pt --partition test
+
+# Separate correspondence experiment; requires real synchronized videos from at least two identities in each of train and validation.
+OMP_NUM_THREADS=2 .venv/bin/python -m deepfake_dtw.alignment \
+  /workspace/deepfake-private/dataset/split.json /workspace/deepfake-private/dataset/alignment.pt --seed 42 --epochs 5
+```
+
+Splitting groups the transitive closure of source/target identities, video IDs and source recording IDs; it aims at 70/15/15 but connected components can make this impossible or leave a partition single-class. It requires at least three independent components and reports actual counts. Training refuses a training partition without both classes or an empty validation partition. Normalization uses only unpadded training frames; checkpoints bind the manifest, video and feature hashes and refuse overwrite. New extractions record the input-video hash in feature metadata; older artifacts without it rely on the manifest’s attestation and must be re-extracted to verify that binding. Evaluation aggregates clip scores by video ID, reports a fixed 0.5 threshold and uncalibrated sigmoid scores only as aggregate research metrics, and returns null ROC-AUC for a single-class set. The simple full-batch head is intended for small experiments and can exceed memory on large datasets. Do not interpret it as calibrated or deployment-ready.
+
+The alignment harness learns separate audio and visual projections from timestamp-matched pairs, controlled ±0.2 s offset negatives and different-identity speech negatives within each partition. It reports validation loss and a controlled rigid-lag search versus fixed-zero and constant-guess reference. Labels assume timestamp synchronization and can be wrong for silence, coarticulation or natural delays. Whisper's nominal valid frames remain influenced by padded 30-second context. The harness does not prove semantic correspondence, does not use test data for fitting or validation, and must be independently evaluated on held-out identities before any DTW experiment. False negatives, class imbalance and dataset bias need scrutiny.
