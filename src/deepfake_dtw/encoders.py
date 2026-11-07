@@ -62,14 +62,26 @@ class WhisperAudioEncoder:
 
 
 class VisualEncoder:
-    def __init__(self, *, device: torch.device, seed: int = 0):
+    def __init__(self, *, device: torch.device, seed: int = 0, checkpoint: str | None = None, sha256: str | None = None):
         self.device = device
+        if (checkpoint is None) != (sha256 is None):
+            raise ValueError("Visual checkpoint and expected SHA-256 must be supplied together")
         with torch.random.fork_rng():
             torch.manual_seed(seed)
             self.model = resnet18(weights=None)
         self.model.fc = torch.nn.Identity()
+        digest = None
+        if checkpoint is not None:
+            path = Path(checkpoint)
+            if not path.is_file():
+                raise FileNotFoundError(f"Visual checkpoint not found: {path}")
+            with path.open("rb") as stream:
+                digest = hashlib.file_digest(stream, "sha256").hexdigest()
+            if digest != sha256.lower():
+                raise ValueError("Visual checkpoint SHA-256 mismatch")
+            self.model.load_state_dict(torch.load(path, map_location="cpu", weights_only=True), strict=True)
         self.model.to(device).eval()
-        self.provenance = {"model": "torchvision ResNet-18", "weights": "uninitialized", "seed": seed, "checkpoint_sha256": None}
+        self.provenance = {"model": "torchvision ResNet-18", "weights": "user_supplied" if checkpoint else "uninitialized", "seed": None if checkpoint else seed, "checkpoint_sha256": digest, "note": "User-supplied digest verifies integrity only, not license or training provenance."}
 
     def extract(self, video: Prepared) -> Prepared:
         if video is None or video.values.ndim != 4 or video.values.shape[1:] != (3, 224, 224) or len(video.values) == 0:
