@@ -96,5 +96,7 @@ class VisualEncoder:
         if video is None or video.values.ndim != 4 or video.values.shape[1:] != (3, 224, 224) or len(video.values) == 0:
             raise ValueError("Prepared RGB video frames are required")
         with torch.inference_mode():
-            features = self.model(self.transform(video.values.to(self.device))).cpu()
+            # Bound activation memory for 10–15 second clips; preserve frame order.
+            features = torch.cat([self.model(self.transform(batch.to(self.device))).cpu()
+                                  for batch in video.values.split(8)], dim=0)
         return Prepared(features, video.timestamps.clone(), {**video.metadata, **self.provenance})

@@ -49,7 +49,7 @@ def read_mp4(path):
             raise MediaError('Video dimensions exceed 1920x1080 or are invalid')
         vf = [f for f in info['frames'] if f['stream_index'] == v['index']]
         af = [f for f in info['frames'] if f['stream_index'] == a['index']]
-        if not vf or not af or len(vf) > 1800 or len(vf) * w * h * 3 > 200_000_000:
+        if not vf or not af or len(vf) > 1800 or len(vf) * 224 * 224 * 3 > 200_000_000:
             raise MediaError('Missing decoded timestamps or too many video frames')
         vt = [float(Fraction(int(f['best_effort_timestamp'])) * Fraction(v['time_base'])) for f in vf]
         at = [float(Fraction(int(f['best_effort_timestamp'])) * Fraction(a['time_base'])) for f in af]
@@ -64,16 +64,16 @@ def read_mp4(path):
         if isinstance(exc, MediaError):
             raise
         raise MediaError('Corrupt media or missing stream timing metadata') from exc
-    vraw = _run(['ffmpeg', *base, '-xerror', '-threads', '1', '-copyts', '-i', str(path), '-map', f"0:{v['index']}", '-fps_mode', 'passthrough', '-f', 'rawvideo', '-pix_fmt', 'rgb24', 'pipe:1'])
-    if len(vraw) != len(vf) * w * h * 3:
+    vraw = _run(['ffmpeg', *base, '-xerror', '-threads', '1', '-copyts', '-i', str(path), '-map', f"0:{v['index']}", '-fps_mode', 'passthrough', '-vf', 'scale=224:224:flags=bilinear', '-f', 'rawvideo', '-pix_fmt', 'rgb24', 'pipe:1'])
+    if len(vraw) != len(vf) * 224 * 224 * 3:
         raise MediaError('Decoded video frame count differs from timestamp count')
     araw = _run(['ffmpeg', *base, '-xerror', '-threads', '1', '-copyts', '-i', str(path), '-map', f"0:{a['index']}", '-ac', '1', '-ar', '16000', '-f', 'f32le', 'pipe:1'])
     if not araw or len(araw) % 4:
         raise MediaError('Audio decoding produced no valid samples')
-    frames = np.frombuffer(vraw, dtype=np.uint8).reshape(len(vf), h, w, 3).copy()
+    frames = np.frombuffer(vraw, dtype=np.uint8).reshape(len(vf), 224, 224, 3).copy()
     sampled = prepare_video(frames, vt)
     samples = np.frombuffer(araw, dtype='<f4').copy()
     prepared_audio = prepare_audio(samples, 16000, at[0])
     elapsed = time.perf_counter() - start
-    meta = {'video_time_base': v['time_base'], 'audio_time_base': a['time_base'], 'first_video_pts_seconds': vt[0], 'first_audio_pts_seconds': at[0], 'audio_minus_video_seconds': at[0] - vt[0], 'offset_convention': 'positive means audio begins later than video', 'source_frames': len(vf), 'sampled_frames': len(sampled.values), 'source_frame_timestamps_seconds': vt, 'audio_samples': len(samples), 'source_audio_rate_hz': int(a['sample_rate']), 'ffmpeg_audio_transform': 'decode to mono f32le at 16000 Hz', 'audio_transform': prepared_audio.metadata, 'video_transform': sampled.metadata, 'timestamp_conversion': 'integer best_effort_timestamp multiplied by stream time_base; seconds in container timeline', 'container_duration_seconds': duration, 'decode_and_sample_seconds': elapsed, 'source_frames_per_second_processing': len(vf) / elapsed}
+    meta = {'video_time_base': v['time_base'], 'audio_time_base': a['time_base'], 'first_video_pts_seconds': vt[0], 'first_audio_pts_seconds': at[0], 'audio_minus_video_seconds': at[0] - vt[0], 'offset_convention': 'positive means audio begins later than video', 'source_dimensions': [w, h], 'decode_resize': 'FFmpeg bilinear scale to 224x224 before buffering; aspect ratio not preserved', 'source_frames': len(vf), 'sampled_frames': len(sampled.values), 'source_frame_timestamps_seconds': vt, 'audio_samples': len(samples), 'source_audio_rate_hz': int(a['sample_rate']), 'ffmpeg_audio_transform': 'decode to mono f32le at 16000 Hz', 'audio_transform': prepared_audio.metadata, 'video_transform': sampled.metadata, 'timestamp_conversion': 'integer best_effort_timestamp multiplied by stream time_base; seconds in container timeline', 'container_duration_seconds': duration, 'decode_and_sample_seconds': elapsed, 'source_frames_per_second_processing': len(vf) / elapsed}
     return prepared_audio, sampled, meta

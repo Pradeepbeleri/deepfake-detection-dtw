@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import json
+import os
 import resource
 import sys
 import time
@@ -46,6 +47,9 @@ def run(path, *, audio_checkpoint=None, visual_checkpoint=None, visual_sha256=No
         elif mouths is None or any(f['status'] in ('multiple_faces', 'tracking_lost') for f in face_report['frames']):
             report['status'] = 'face_unusable'
             report['reason'] = 'No reliable single-face mouth track; frames were not fabricated.'
+        elif face_report['detection_fraction'] < 0.8:
+            report['status'] = 'face_unusable'
+            report['reason'] = 'Mouth detection coverage below the provisional 80% minimum.'
         else:
             output = Path(output)
             if output.exists():
@@ -54,11 +58,28 @@ def run(path, *, audio_checkpoint=None, visual_checkpoint=None, visual_sha256=No
             feature_start = time.perf_counter()
             audio_model = WhisperAudioEncoder(device=chosen, mode='pretrained', checkpoint=audio_checkpoint)
             video_model = VisualEncoder(device=chosen, checkpoint=visual_checkpoint, sha256=visual_sha256, checkpoint_format=visual_format)
-            af, vf = audio_model.extract(audio), video_model.extract(mouths)
+            report['model_load_seconds'] = time.perf_counter() - feature_start
+            inference_start = time.perf_counter()
+            af = audio_model.extract(audio)
+            if chosen.type == 'cuda':
+                torch.cuda.synchronize(chosen)
+            report['audio_inference_seconds'] = time.perf_counter() - inference_start
+            visual_start = time.perf_counter()
+            vf = video_model.extract(mouths)
+            if chosen.type == 'cuda':
+                torch.cuda.synchronize(chosen)
+            report['visual_inference_seconds'] = time.perf_counter() - visual_start
+            report['inference_seconds'] = time.perf_counter() - inference_start
+            report['device'] = str(chosen)
             if not torch.isfinite(af.values).all() or not torch.isfinite(vf.values).all():
                 raise ValueError('Non-finite encoder output')
-            with output.open('xb') as stream:
-                np.savez_compressed(stream, audio=af.values.numpy(), audio_timestamps=af.timestamps.numpy(), video=vf.values.numpy(), video_timestamps=vf.timestamps.numpy(), metadata_json=json.dumps({'audio': af.metadata, 'video': vf.metadata, 'media': media, 'face_quality': face_report, 'alignment': 'not validated'}))
+            fd = os.open(output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            try:
+                with os.fdopen(fd, 'wb') as stream:
+                    np.savez_compressed(stream, audio=af.values.numpy(), audio_timestamps=af.timestamps.numpy(), video=vf.values.numpy(), video_timestamps=vf.timestamps.numpy(), metadata_json=json.dumps({'audio': af.metadata, 'video': vf.metadata, 'media': media, 'face_quality': face_report, 'alignment': 'not validated'}))
+            except Exception:
+                output.unlink(missing_ok=True)
+                raise
             report.update(status='features_extracted', features_written=True, feature_seconds=time.perf_counter()-feature_start, audio_shape=list(af.values.shape), visual_shape=list(vf.values.shape), audio_provenance=audio_model.provenance, visual_provenance=video_model.provenance, warning='Separate features; cross-modal alignment not validated. Whisper padded timestamps are nominal.')
     except (MediaError, ValueError, OSError, RuntimeError) as exc:
         report['status'] = 'invalid_media' if isinstance(exc, MediaError) else 'error'
