@@ -1,0 +1,21 @@
+# Experimental design (proposal; preregister before running)
+
+## Question and comparisons
+
+Does adding DTW-derived timing features improve robustness to ordinary delays while preserving unshifted deepfake detection? Compare (A) an independently implemented AV-HuBERT-based temporal classifier, subject to license clearance, and (B) the same baseline plus DTW features. Same inputs, preprocessing, splits, tuning budget, training data, seed set and evaluation; B may differ only in the declared DTW feature path and necessary fusion parameters. Report parameter counts and compute. Include an A model with a comparable extra head/capacity and a simple fixed-lag/cross-correlation feature baseline to separate alignment benefits from added capacity. Neither system is the published architecture by default.
+
+## Data and leakage
+
+Select licensed datasets with genuine and manipulated examples and relevant audio-video manipulations. Group splits by original source video and identities where metadata permits; ensure manipulated derivatives and all delay variants remain in the same split. Audit cross-dataset identity overlap and provenance. Fit preprocessing, feature normalization, classifier, calibration, thresholds and hyperparameters using training/validation only; freeze them before held-out test. Document class balance, manipulation types, exclusions, missing audio, quality and demographic limitations. A separate dataset/domain test is desirable when licensed and identity-disjoint. Reserve a locked clean test set; do not select settings on it.
+
+## Alignment validation
+
+Audio and visual embeddings cannot be compared by Euclidean distance merely because they have dimensions: specify and validate a shared or cross-modal comparable space, or align scalar time series derived from both modalities with a justified relationship. Record rates, timestamps, missing frames, normalization fitted on training only, distance metric, constraints and endpoint handling. Use bounded monotone DTW (predeclared maximum lag and slope constraints); normalize path cost by path length and retain meaningful lag/path distortion statistics. DTW may erase manipulated timing evidence: compare raw lag/unaligned features and alignment residuals, and ablate each. Never equate low alignment cost with authenticity.
+
+Test alignment first on synthetic sequences with known positive and negative offsets, zero offset, local drift, silence, missing frames, and unrelated pairs. Verify sign, units, limits, edge behavior and deterministic outputs. Inject audio shifts into real held-out clips with a fixed sign convention (positive = audio later), e.g. 0, ±40, ±80, ±160 and ±320 ms, subject to realistic sampling; trim to common overlap rather than introduce label-correlated padding. Apply the same shifts to both labels and retain paired clip IDs. Check timestamp quantization and offset recovery tolerance before interpreting results. Report exclusions and any changes to clip content.
+
+## Outcomes and decision
+
+Primary: paired difference B−A in video-level AUROC at each delay, with a prespecified summary over nonzero shifts; quantify clean performance separately. Use identity/source-cluster paired bootstrap confidence intervals, report seeds and uncertainty. Preregister a practically meaningful non-inferiority margin on clean AUROC before accessing test results; if no margin can be justified, report the estimate and interval without claiming non-inferiority. Also report AUPRC with prevalence, balanced accuracy and FPR/TPR at a validation-selected operating point, and subgroup/manipulation breakdowns with counts. Measure offset error and failure rate separately from classification. Report compute, latency and missing-data rates.
+
+Calibrate probabilities only on a separate validation/calibration partition (e.g. temperature scaling), and report Brier score, reliability plots and calibration under distribution shift; do not call an uncalibrated score a probability. One held-out test, multiple seeds and paired intervals support conclusions; they cannot establish universal robustness or causation outside sampled conditions. Prespecify exclusions, sample sizes/power where possible and all deviations; report negative results.
