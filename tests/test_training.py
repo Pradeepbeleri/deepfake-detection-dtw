@@ -213,3 +213,21 @@ def test_training_does_not_parse_test_feature_arrays(tmp_path, monkeypatch):
     monkeypatch.setattr(training,'read_features',guarded)
     result=training.train(str(manifest),str(tmp_path/'head.pt'),epochs=1,hidden=4)
     assert 'validation_selected_threshold' in result
+
+
+def test_training_cuda_request_does_not_fallback(tmp_path):
+    if torch.cuda.is_available():
+        pytest.skip('CUDA available; covered by explicit CUDA integration test')
+    rows=records(tmp_path); manifest=tmp_path/'manifest.json'; manifest.write_text(json.dumps(rows))
+    with pytest.raises(RuntimeError, match='CUDA requested but unavailable'):
+        train(str(manifest), str(tmp_path/'head.pt'), epochs=1, hidden=4, device='cuda')
+    assert not (tmp_path/'head.pt').exists()
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason='Requires actual CUDA GPU')
+def test_training_and_evaluation_on_real_cuda_with_test_fixtures(tmp_path):
+    rows=records(tmp_path); manifest=tmp_path/'manifest.json'; manifest.write_text(json.dumps(rows))
+    checkpoint=tmp_path/'head.pt'
+    result=train(str(manifest),str(checkpoint),epochs=1,hidden=4,device='cuda')
+    assert result['device']=='cuda'
+    assert evaluate(str(manifest),str(checkpoint),device='cuda')['device']=='cuda'

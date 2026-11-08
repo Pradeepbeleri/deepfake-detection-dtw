@@ -12,6 +12,7 @@ import numpy as np
 import torch
 from torch import nn
 from .dataset import load
+from .encoders import select_device
 
 
 def read_features(path):
@@ -123,7 +124,7 @@ def prepare(records):
     return items
 
 
-def train(manifest, checkpoint, *, epochs=10, seed=42, lr=0.001, hidden=128):
+def train(manifest, checkpoint, *, epochs=10, seed=42, lr=0.001, hidden=128, device="cpu"):
     started = time.perf_counter()
     if epochs < 1 or hidden < 1 or lr <= 0:
         raise ValueError('epochs, hidden and learning rate must be positive')
@@ -133,28 +134,34 @@ def train(manifest, checkpoint, *, epochs=10, seed=42, lr=0.001, hidden=128):
         raise ValueError('Training and validation each require both classes')
     if not any(r['partition'] == 'test' for r in records):
         raise ValueError('A held-out test partition is required')
+    if device in ('cuda', 'auto'):
+        # Required by deterministic CUDA matmul; set before CUDA work starts.
+        if os.environ.get('CUBLAS_WORKSPACE_CONFIG') not in (None, ':4096:8', ':16:8'):
+            raise ValueError('CUBLAS_WORKSPACE_CONFIG must be :4096:8 or :16:8 for deterministic CUDA')
+        os.environ.setdefault('CUBLAS_WORKSPACE_CONFIG', ':4096:8')
+    chosen = select_device(device)
     random.seed(seed); np.random.seed(seed); torch.manual_seed(seed); torch.use_deterministic_algorithms(True)
     # Fit normalization per frame from train only; padded audio excluded by read_features.
     norm = {}
     for key in ('audio', 'video'):
         z = torch.from_numpy(np.concatenate([i[key] for i in tr], axis=0))
         norm[key+'_mean'] = z.mean(0); norm[key+'_std'] = z.std(0, unbiased=False).clamp_min(1e-6)
-    model = Classifier(hidden); opt = torch.optim.Adam(model.parameters(), lr=lr)
+    model = Classifier(hidden).to(chosen); opt = torch.optim.Adam(model.parameters(), lr=lr)
     positives = sum(i['label'] for i in tr); negatives = len(tr)-positives
-    lossfn = nn.BCEWithLogitsLoss(pos_weight=torch.tensor(negatives/positives))
-    train_inputs = batch(tr, norm); val_inputs = batch(val, norm)
-    ty = torch.tensor([i['label'] for i in tr], dtype=torch.float32); vy = torch.tensor([i['label'] for i in val], dtype=torch.float32)
+    lossfn = nn.BCEWithLogitsLoss(pos_weight=torch.tensor(negatives/positives, device=chosen))
+    train_inputs = tuple(x.to(chosen) for x in batch(tr, norm)); val_inputs = tuple(x.to(chosen) for x in batch(val, norm))
+    ty = torch.tensor([i['label'] for i in tr], dtype=torch.float32, device=chosen); vy = torch.tensor([i['label'] for i in val], dtype=torch.float32, device=chosen)
     best, best_state, best_epoch = float('inf'), None, None
     for epoch in range(epochs):
         model.train(); opt.zero_grad(); loss = lossfn(model(*train_inputs), ty); loss.backward(); opt.step()
         model.eval()
         with torch.no_grad(): vl = nn.functional.binary_cross_entropy_with_logits(model(*val_inputs), vy).item()
         if np.isfinite(vl) and vl < best:
-            best = vl; best_epoch = epoch+1; best_state = {k: v.detach().clone() for k, v in model.state_dict().items()}
+            best = vl; best_epoch = epoch+1; best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
     if best_state is None:
         raise ValueError('No finite validation loss; checkpoint not saved')
     model.load_state_dict(best_state); model.eval()
-    with torch.no_grad(): val_scores = torch.sigmoid(model(*val_inputs)).numpy()
+    with torch.no_grad(): val_scores = torch.sigmoid(model(*val_inputs)).cpu().numpy()
     validation_videos = aggregate_by_video(val, val_scores)
     threshold = choose_threshold([v['label'] for v in validation_videos.values()], [v['score'] for v in validation_videos.values()])
     with open(manifest, 'rb') as f: manifest_digest = hashlib.file_digest(f, 'sha256').hexdigest()
@@ -177,12 +184,12 @@ def train(manifest, checkpoint, *, epochs=10, seed=42, lr=0.001, hidden=128):
             'training_clips': len(tr), 'validation_clips': len(val),
             'training_videos': len({i['video_id'] for i in tr}), 'validation_videos': len(validation_videos),
             'dataset_origins': sorted({r['dataset'] for r in records}), 'manifest_sha256': manifest_digest,
-            'checkpoint_sha256': checkpoint_digest, 'device': 'cpu', 'wall_seconds': time.perf_counter()-started,
+            'checkpoint_sha256': checkpoint_digest, 'device': str(chosen), 'wall_seconds': time.perf_counter()-started,
             'process_peak_rss_kib_linux': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
             'note': 'Validation loss only; no calibration or effectiveness claim.'}
 
 
-def evaluate(manifest, checkpoint, partition='test'):
+def evaluate(manifest, checkpoint, partition='test', device='cpu'):
     if partition not in ('validation', 'test'):
         raise ValueError('Evaluation partition must be validation or test')
     records = load(manifest); items = prepare(records)
@@ -197,8 +204,10 @@ def evaluate(manifest, checkpoint, partition='test'):
     selected = [i for i in items if i['partition'] == partition]
     if not selected or any(i['provenance'] != artifact['encoder_provenance'] for i in selected):
         raise ValueError('Empty evaluation partition or inconsistent encoder provenance')
-    model = Classifier(artifact['hidden']); model.load_state_dict(artifact['state_dict']); model.eval()
-    with torch.no_grad(): scores = torch.sigmoid(model(*batch(selected, artifact['normalization']))).numpy()
+    chosen = select_device(device)
+    model = Classifier(artifact['hidden']); model.load_state_dict(artifact['state_dict']); model.to(chosen).eval()
+    inputs = tuple(x.to(chosen) for x in batch(selected, artifact['normalization']))
+    with torch.no_grad(): scores = torch.sigmoid(model(*inputs)).cpu().numpy()
     by_video = aggregate_by_video(selected, scores)
     threshold = float(artifact['threshold'])
     video_labels = [v['label'] for v in by_video.values()]
@@ -208,7 +217,7 @@ def evaluate(manifest, checkpoint, partition='test'):
     with open(checkpoint, 'rb') as stream:
         checkpoint_digest = hashlib.file_digest(stream, 'sha256').hexdigest()
     return {**metrics(video_labels, video_scores, threshold), 'partition': partition, 'threshold': threshold,
-            'manifest_sha256': digest, 'checkpoint_sha256': checkpoint_digest,
+            'manifest_sha256': digest, 'checkpoint_sha256': checkpoint_digest, 'device': str(chosen),
             'threshold_source': artifact['threshold_selection'], 'class_counts': {'real': video_labels.count(0), 'fake': video_labels.count(1)},
             'false_positive_video_ids': false_positives, 'false_negative_video_ids': false_negatives,
             'score_note': 'Uncalibrated sigmoid; no probability or deployment claim.'}
@@ -216,10 +225,10 @@ def evaluate(manifest, checkpoint, partition='test'):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__); sub = p.add_subparsers(dest='command', required=True)
-    t = sub.add_parser('train'); t.add_argument('manifest'); t.add_argument('checkpoint'); t.add_argument('--epochs', type=int, default=10); t.add_argument('--seed', type=int, default=42); t.add_argument('--lr', type=float, default=.001); t.add_argument('--hidden', type=int, default=128)
-    e = sub.add_parser('evaluate'); e.add_argument('manifest'); e.add_argument('checkpoint'); e.add_argument('--partition', choices=['validation', 'test'], default='test')
+    t = sub.add_parser('train'); t.add_argument('manifest'); t.add_argument('checkpoint'); t.add_argument('--epochs', type=int, default=10); t.add_argument('--seed', type=int, default=42); t.add_argument('--lr', type=float, default=.001); t.add_argument('--hidden', type=int, default=128); t.add_argument('--device', choices=['cpu', 'cuda', 'auto'], default='cpu')
+    e = sub.add_parser('evaluate'); e.add_argument('manifest'); e.add_argument('checkpoint'); e.add_argument('--partition', choices=['validation', 'test'], default='test'); e.add_argument('--device', choices=['cpu', 'cuda', 'auto'], default='cpu')
     a=p.parse_args()
-    result = train(a.manifest,a.checkpoint,epochs=a.epochs,seed=a.seed,lr=a.lr,hidden=a.hidden) if a.command=='train' else evaluate(a.manifest,a.checkpoint,a.partition)
+    result = train(a.manifest,a.checkpoint,epochs=a.epochs,seed=a.seed,lr=a.lr,hidden=a.hidden,device=a.device) if a.command=='train' else evaluate(a.manifest,a.checkpoint,a.partition,device=a.device)
     print(json.dumps(result,indent=2))
 
 
