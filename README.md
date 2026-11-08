@@ -223,3 +223,5 @@ The LAV-DF notebook sets up a separate, checksum-verified Python 3.12.10 interpr
 ### LAV-DF archive recovery
 
 The LAV-DF notebook now supports an authorized private `LAV-DF.tar` in persistent Drive storage, rather than assuming individual provider downloads. It checks the user-supplied expected archive SHA-256 and extracts only planned regular MP4 members, checking previously extracted files on restart. Metadata and an independently audited provenance sidecar remain required. The archive and private Drive workflow have not been exercised against the real dataset here. Never commit archives, metadata, media, features, tokens or trained weights.
+
+For authorized local research only, `python -m deepfake_dtw.analyze --help` describes the video-to-features, classifier and experimental DTW command. It requires explicitly supplied checkpoint files and full hashes, and never supplies a classifier on the user's behalf. A successful run with an actually trained and held-out-evaluated model remains unverified. The resulting sigmoid is uncalibrated; audio-energy/lip-aperture DTW is exploratory and must not be presented as validated synchronization evidence.

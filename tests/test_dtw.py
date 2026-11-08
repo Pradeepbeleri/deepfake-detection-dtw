@@ -19,6 +19,9 @@ def test_controlled_delayed_video_produces_positive_path_offset():
     active = signal(result['audio_times']) > .5
     assert np.median(result['offsets_seconds'][active]) == pytest.approx(.2, abs=.04)
     assert np.max(np.abs(result['offsets_seconds'])) <= .4 + 1e-8
+    reverse = constrained_dtw(t, signal(t-.2), t, signal(t), max_warp_seconds=.4)
+    active_audio = signal(reverse['audio_times']-.2) > .5
+    assert np.median(reverse['offsets_seconds'][active_audio]) == pytest.approx(-.2, abs=.04)
 
 
 def test_rejects_missing_flat_and_invalid_data():
