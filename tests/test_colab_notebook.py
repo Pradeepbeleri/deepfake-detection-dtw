@@ -60,3 +60,16 @@ def test_training_and_test_reports_are_bound_before_reuse():
     for source in (train, evaluate):
         assert "saved.get('checkpoint_sha256') == digest_file(checkpoint)" in source
         assert "saved.get('manifest_sha256') == digest_file(PLAN)" in source
+
+
+def test_dinov2_checkout_staged_locally_for_smoke_and_extraction():
+    sources = code_cells()
+    config = next(s for s in sources if "DINO_DRIVE_SOURCE = PRIVATE / 'dinov2-src'" in s)
+    assert "DINO_SOURCE = Path('/content/dinov2-src-7764ea0f')" in config
+    assert "'deepfake_dtw.stage_dinov2'" in config
+    assert "'--source', str(DINO_DRIVE_SOURCE), '--destination', str(DINO_SOURCE)" in config
+    smoke = next(s for s in sources if 'MODEL_SMOKE =' in s)
+    extraction = next(s for s in sources if "'-m', 'deepfake_dtw.extract'" in s)
+    assert 'str(DINO_SOURCE)' in smoke
+    assert "'--dinov2-source', str(DINO_SOURCE)" in extraction
+    assert 'DINO_DRIVE_SOURCE' not in smoke and 'DINO_DRIVE_SOURCE' not in extraction
