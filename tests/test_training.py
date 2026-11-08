@@ -254,3 +254,41 @@ def test_private_classifier_inference_requires_hash_and_matching_encoders(tmp_pa
     modified=tmp_path/'different.pt'; torch.save(artifact,modified)
     with pytest.raises(ValueError, match='encoder provenance'):
         predict(rows[0]['feature_path'],str(modified),checkpoint_sha256=hashlib.sha256(modified.read_bytes()).hexdigest())
+
+
+def test_resumable_training_matches_uninterrupted_fixture(tmp_path, monkeypatch):
+    rows=records(tmp_path); manifest=tmp_path/'manifest.json'; manifest.write_text(json.dumps(rows))
+    progress=tmp_path/'progress.pt'; output=tmp_path/'resumed.pt'; original=torch.optim.Adam.step
+    calls={'n':0}
+    def interrupt(self, *args, **kwargs):
+        calls['n'] += 1
+        if calls['n'] == 2:
+            raise RuntimeError('synthetic interruption')
+        return original(self, *args, **kwargs)
+    monkeypatch.setattr(torch.optim.Adam, 'step', interrupt)
+    with pytest.raises(RuntimeError, match='synthetic interruption'):
+        train(str(manifest),str(output),epochs=2,hidden=4,seed=7,progress=str(progress))
+    assert progress.is_file() and not output.exists()
+    monkeypatch.setattr(torch.optim.Adam, 'step', original)
+    with pytest.raises(ValueError, match='does not match'):
+        train(str(manifest),str(output),epochs=2,hidden=4,seed=8,progress=str(progress))
+    train(str(manifest),str(output),epochs=2,hidden=4,seed=7,progress=str(progress))
+    baseline=tmp_path/'baseline.pt'; train(str(manifest),str(baseline),epochs=2,hidden=4,seed=7)
+    resumed=torch.load(output, weights_only=True); full=torch.load(baseline, weights_only=True)
+    assert all(torch.equal(resumed['state_dict'][key], full['state_dict'][key]) for key in full['state_dict'])
+    assert resumed['threshold'] == full['threshold']
+
+
+def test_source_group_training_does_not_claim_identity_disjointness(tmp_path):
+    rows=records(tmp_path)
+    for row in rows:
+        row.update(provenance_scope='provider_source_recording', source_identity=None, target_identity=None)
+    manifest=tmp_path/'source-manifest.json'; manifest.write_text(json.dumps(rows))
+    checkpoint=tmp_path/'source-head.pt'
+    report=train(str(manifest),str(checkpoint),epochs=1,hidden=4)
+    assert report['provenance_scope'] == 'provider_source_recording'
+    assert report['identity_disjoint_verified'] is False
+    held_out=evaluate(str(manifest),str(checkpoint))
+    assert held_out['identity_disjoint_verified'] is False
+    with pytest.raises(ValueError, match='requires audited identity'):
+        experiment(str(manifest), str(tmp_path/'alignment.pt'), epochs=1)

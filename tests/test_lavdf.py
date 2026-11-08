@@ -49,3 +49,49 @@ def test_reject_unsafe_paths_and_unbalanced_selection(tmp_path):
     with pytest.raises(ValueError, match='safe relative'): plan(meta, prov, str(tmp_path/'m'), str(tmp_path/'f'))
     meta, prov = fixture(); del prov['dev/fake.mp4']
     with pytest.raises(ValueError, match='both labels'): plan(meta, prov, str(tmp_path/'m'), str(tmp_path/'f'))
+
+
+def test_source_groups_keep_provider_labels_and_never_invent_identities(tmp_path):
+    from deepfake_dtw.lavdf import plan_source_groups
+    metadata, _ = fixture()
+    for split in ('train', 'dev', 'test'):
+        source = f'{split}/real.mp4'
+        for row in metadata:
+            if row['file'] == f'{split}/fake.mp4':
+                row['original'] = source
+    rows, audit = plan_source_groups(metadata, str(tmp_path/'media'), str(tmp_path/'features'), usage_rights='Authorized synthetic fixture', limit=4)
+    assert len(rows) == 6 and audit['matched_source_groups_selected'] == 3
+    assert all(r['source_identity'] is None and r['target_identity'] is None for r in rows)
+    assert all(r['provenance_scope'] == 'provider_source_recording' for r in rows)
+    assert all(sum(r['partition'] == p and r['label'] == label for r in rows) == 1 for p in ('train','validation','test') for label in ('real','fake'))
+    assert rows == plan_source_groups(metadata, str(tmp_path/'media'), str(tmp_path/'features'), usage_rights='Authorized synthetic fixture', limit=4)[0]
+
+
+def test_source_groups_refuse_unmatched_and_cross_split_links(tmp_path):
+    from deepfake_dtw.lavdf import plan_source_groups
+    metadata, _ = fixture()
+    for row in metadata:
+        if row['file'].endswith('fake.mp4'):
+            row['original'] = row['split'] + '/real.mp4'
+    next(r for r in metadata if r['file']=='dev/fake.mp4')['original']='train/real.mp4'
+    with pytest.raises(ValueError, match='no exact provider-original pairs'):
+        plan_source_groups(metadata, str(tmp_path/'m'), str(tmp_path/'f'), usage_rights='test')
+    next(r for r in metadata if r['file']=='dev/fake.mp4')['original']='dev/no-such.mp4'
+    with pytest.raises(ValueError, match='Unmatched fakes: 1'):
+        plan_source_groups(metadata, str(tmp_path/'m'), str(tmp_path/'f'), usage_rights='test')
+
+
+def test_source_scope_rejects_unverified_identities_and_mixed_scope(tmp_path):
+    from deepfake_dtw.dataset import validate
+    from deepfake_dtw.lavdf import plan_source_groups
+    metadata, _ = fixture()
+    for row in metadata:
+        if row['file'].endswith('fake.mp4'):
+            row['original'] = row['split'] + '/real.mp4'
+    rows, _ = plan_source_groups(metadata, str(tmp_path/'m'), str(tmp_path/'f'), usage_rights='test')
+    bad = [dict(r) for r in rows]; bad[0]['source_identity'] = 'not-evidenced'
+    with pytest.raises(ValueError, match='unverified identities'): validate(bad, check_files=False)
+    bad = [dict(r) for r in rows]; bad[0]['provenance_scope'] = 'identity_and_recording'
+    with pytest.raises(ValueError, match='one recognized provenance scope'): validate(bad, check_files=False)
+    bad = [dict(r) for r in rows]; bad[-1]['source_recordings'] = bad[0]['source_recordings']
+    with pytest.raises(ValueError, match='leakage'): validate(bad, check_files=False)

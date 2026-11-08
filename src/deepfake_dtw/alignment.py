@@ -88,7 +88,10 @@ class Projections(nn.Module):
 
 def experiment(manifest, output, *, seed=42, epochs=5):
     if epochs < 1: raise ValueError('epochs must be positive')
-    records = load(manifest); items = prepare([r for r in records if r['label'] == 'real'])
+    records = load(manifest)
+    if any(r.get('provenance_scope', 'identity_and_recording') != 'identity_and_recording' for r in records):
+        raise ValueError('Alignment negative sampling requires audited identity provenance')
+    items = prepare([r for r in records if r['label'] == 'real'])
     train = [i for i in items if i['partition'] == 'train']; valid = [i for i in items if i['partition'] == 'validation']
     if len(train) < 2 or len(valid) < 2:
         raise ValueError('Alignment needs at least two real videos in both train and validation')

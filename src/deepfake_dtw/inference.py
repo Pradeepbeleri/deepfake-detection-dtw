@@ -49,10 +49,13 @@ def predict(features, checkpoint, *, checkpoint_sha256, device='cpu'):
         score = torch.sigmoid(model(*inputs)).item()
     if not np.isfinite(score):
         raise ValueError('Non-finite classifier output')
-    return {'classification': 'fake' if score >= threshold else 'real',
+    scope = artifact.get('provenance_scope', 'identity_and_recording')
+    scope_note = ' Identity-disjoint evaluation is not established.' if scope == 'provider_source_recording' else ''
+    return {'provenance_scope': scope, 'identity_disjoint_verified': False,
+            'classification': 'fake' if score >= threshold else 'real',
             'score': score, 'threshold': threshold, 'score_kind': 'uncalibrated sigmoid',
             'classifier_sha256': actual, 'encoder_provenance': item['provenance'],
-            'device': str(chosen), 'warning': 'Research output; accuracy and calibration require held-out evaluation. Not identity verification.'}
+            'device': str(chosen), 'warning': 'Research output; accuracy and calibration require held-out evaluation. Not identity verification.' + scope_note}
 
 
 def main():

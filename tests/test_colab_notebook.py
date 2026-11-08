@@ -41,3 +41,22 @@ def test_colab_diagnostic_distinguishes_kernel_and_requires_cuda():
     assert "torch.cuda.is_available()" in script
     assert "device='cuda'" in script
     assert "torch.cuda.synchronize()" in script
+
+
+def test_source_group_plan_is_explicit_and_identity_sidecar_is_optional():
+    sources = code_cells()
+    planning = next(s for s in sources if "PLAN_MODE = 'source-group-only'" in s)
+    assert "'--source-group-only'" in planning
+    assert "'--usage-rights'" in planning
+    assert "'--provenance'" in planning
+    assert 'identity disjointness is not established' in planning
+    assert "'metadata_sha256'" in planning and "'repository_commit'" in planning
+
+
+def test_training_and_test_reports_are_bound_before_reuse():
+    sources = code_cells()
+    train = next(s for s in sources if "training_report = REPORTS / 'training.json'" in s)
+    evaluate = next(s for s in sources if "report = REPORTS / 'held-out-test.json'" in s)
+    for source in (train, evaluate):
+        assert "saved.get('checkpoint_sha256') == digest_file(checkpoint)" in source
+        assert "saved.get('manifest_sha256') == digest_file(PLAN)" in source

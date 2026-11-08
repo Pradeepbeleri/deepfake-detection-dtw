@@ -6,6 +6,7 @@ import os
 import random
 import resource
 import time
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -124,8 +125,10 @@ def prepare(records):
     return items
 
 
-def train(manifest, checkpoint, *, epochs=10, seed=42, lr=0.001, hidden=128, device="cpu"):
+def train(manifest, checkpoint, *, epochs=10, seed=42, lr=0.001, hidden=128, device="cpu", progress=None):
     started = time.perf_counter()
+    if Path(checkpoint).exists():
+        raise FileExistsError('Classifier checkpoint already exists; refusing to overwrite')
     if epochs < 1 or hidden < 1 or lr <= 0:
         raise ValueError('epochs, hidden and learning rate must be positive')
     records = load(manifest, feature_partitions={'train', 'validation'}); items = prepare([r for r in records if r['partition'] in ('train', 'validation')])
@@ -151,13 +154,48 @@ def train(manifest, checkpoint, *, epochs=10, seed=42, lr=0.001, hidden=128, dev
     lossfn = nn.BCEWithLogitsLoss(pos_weight=torch.tensor(negatives/positives, device=chosen))
     train_inputs = tuple(x.to(chosen) for x in batch(tr, norm)); val_inputs = tuple(x.to(chosen) for x in batch(val, norm))
     ty = torch.tensor([i['label'] for i in tr], dtype=torch.float32, device=chosen); vy = torch.tensor([i['label'] for i in val], dtype=torch.float32, device=chosen)
-    best, best_state, best_epoch = float('inf'), None, None
-    for epoch in range(epochs):
+    with open(manifest, 'rb') as f:
+        progress_manifest = hashlib.file_digest(f, 'sha256').hexdigest()
+    with open(__file__, 'rb') as stream:
+        training_code_sha256 = hashlib.file_digest(stream, 'sha256').hexdigest()
+    progress_config = {'manifest_sha256': progress_manifest, 'seed': seed, 'lr': lr, 'hidden': hidden, 'epochs': epochs,
+                       'device': str(chosen), 'torch_version': str(torch.__version__), 'numpy_version': np.__version__,
+                       'training_code_sha256': training_code_sha256,
+                       'training_artifacts': {i['sample_id']: [i['feature_sha256'], i['video_sha256']] for i in tr + val}}
+    best, best_state, best_epoch, start_epoch = float('inf'), None, None, 0
+    progress_path = Path(progress) if progress else None
+    if progress_path and progress_path.resolve() == Path(checkpoint).resolve():
+        raise ValueError('Progress and final classifier checkpoints must be different files')
+    if progress_path and progress_path.is_symlink():
+        raise ValueError('Progress checkpoint cannot be a symlink')
+    if progress_path and progress_path.exists():
+        saved = torch.load(progress_path, map_location='cpu', weights_only=True)
+        if saved.get('format') != 'deepfake_dtw_training_progress_v1' or saved.get('config') != progress_config:
+            raise ValueError('Training progress does not match this manifest, data and configuration')
+        start_epoch = saved['epoch']; best = saved['best']; best_state = saved['best_state']; best_epoch = saved['best_epoch']
+        if not isinstance(start_epoch, int) or not 0 < start_epoch <= epochs:
+            raise ValueError('Invalid progress epoch')
+        model.load_state_dict(saved['model']); opt.load_state_dict(saved['optimizer'])
+    for epoch in range(start_epoch, epochs):
         model.train(); opt.zero_grad(); loss = lossfn(model(*train_inputs), ty); loss.backward(); opt.step()
         model.eval()
         with torch.no_grad(): vl = nn.functional.binary_cross_entropy_with_logits(model(*val_inputs), vy).item()
         if np.isfinite(vl) and vl < best:
             best = vl; best_epoch = epoch+1; best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+        if progress_path:
+            if progress_path.is_symlink():
+                raise ValueError('Progress checkpoint cannot be a symlink')
+            progress_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            state = {'format': 'deepfake_dtw_training_progress_v1', 'config': progress_config,
+                     'epoch': epoch+1, 'best': best, 'best_epoch': best_epoch, 'best_state': best_state,
+                     'model': model.state_dict(), 'optimizer': opt.state_dict()}
+            fd, temporary = tempfile.mkstemp(prefix='.training-', suffix='.tmp', dir=progress_path.parent)
+            try:
+                with os.fdopen(fd, 'wb') as stream:
+                    torch.save(state, stream)
+                os.replace(temporary, progress_path)
+            finally:
+                if os.path.exists(temporary): os.unlink(temporary)
     if best_state is None:
         raise ValueError('No finite validation loss; checkpoint not saved')
     model.load_state_dict(best_state); model.eval()
@@ -172,7 +210,7 @@ def train(manifest, checkpoint, *, epochs=10, seed=42, lr=0.001, hidden=128, dev
             all_feature_hashes[record['sample_id']] = hashlib.file_digest(stream, 'sha256').hexdigest()
         with open(record['video_path'], 'rb') as stream:
             all_video_hashes[record['sample_id']] = hashlib.file_digest(stream, 'sha256').hexdigest()
-    artifact = {'format': 'deepfake_dtw_classifier_v2', 'state_dict': best_state, 'normalization': norm, 'hidden': hidden, 'seed': seed, 'best_epoch': best_epoch, 'validation_loss': best, 'threshold': threshold, 'threshold_selection': 'validation video-level balanced accuracy; ties nearest 0.5', 'encoder_provenance': tr[0]['provenance'], 'manifest_sha256': manifest_digest, 'feature_hashes': all_feature_hashes, 'video_hashes': all_video_hashes, 'training_clip_count': len(tr), 'validation_clip_count': len(val), 'training_video_count': len({i['video_id'] for i in tr}), 'validation_video_count': len(validation_videos)}
+    artifact = {'provenance_scope': records[0].get('provenance_scope', 'identity_and_recording'), 'identity_disjoint_verified': False, 'format': 'deepfake_dtw_classifier_v2', 'state_dict': best_state, 'normalization': norm, 'hidden': hidden, 'seed': seed, 'best_epoch': best_epoch, 'validation_loss': best, 'threshold': threshold, 'threshold_selection': 'validation video-level balanced accuracy; ties nearest 0.5', 'encoder_provenance': tr[0]['provenance'], 'manifest_sha256': manifest_digest, 'feature_hashes': all_feature_hashes, 'video_hashes': all_video_hashes, 'training_clip_count': len(tr), 'validation_clip_count': len(val), 'training_video_count': len({i['video_id'] for i in tr}), 'validation_video_count': len(validation_videos)}
     fd = os.open(checkpoint, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     try:
         with os.fdopen(fd, 'wb') as f: torch.save(artifact, f)
@@ -180,7 +218,7 @@ def train(manifest, checkpoint, *, epochs=10, seed=42, lr=0.001, hidden=128, dev
         Path(checkpoint).unlink(missing_ok=True); raise
     with open(checkpoint, 'rb') as stream:
         checkpoint_digest = hashlib.file_digest(stream, 'sha256').hexdigest()
-    return {'best_epoch': best_epoch, 'validation_loss': best, 'validation_selected_threshold': threshold,
+    return {'provenance_scope': artifact['provenance_scope'], 'identity_disjoint_verified': False, 'best_epoch': best_epoch, 'validation_loss': best, 'validation_selected_threshold': threshold,
             'training_clips': len(tr), 'validation_clips': len(val),
             'training_videos': len({i['video_id'] for i in tr}), 'validation_videos': len(validation_videos),
             'dataset_origins': sorted({r['dataset'] for r in records}), 'manifest_sha256': manifest_digest,
@@ -216,7 +254,7 @@ def evaluate(manifest, checkpoint, partition='test', device='cpu'):
     false_negatives = [k for k, v in by_video.items() if v['label'] == 1 and v['score'] < threshold]
     with open(checkpoint, 'rb') as stream:
         checkpoint_digest = hashlib.file_digest(stream, 'sha256').hexdigest()
-    return {**metrics(video_labels, video_scores, threshold), 'partition': partition, 'threshold': threshold,
+    return {**metrics(video_labels, video_scores, threshold), 'provenance_scope': artifact.get('provenance_scope', 'identity_and_recording'), 'identity_disjoint_verified': False, 'partition': partition, 'threshold': threshold,
             'manifest_sha256': digest, 'checkpoint_sha256': checkpoint_digest, 'device': str(chosen),
             'threshold_source': artifact['threshold_selection'], 'class_counts': {'real': video_labels.count(0), 'fake': video_labels.count(1)},
             'false_positive_video_ids': false_positives, 'false_negative_video_ids': false_negatives,
@@ -225,10 +263,10 @@ def evaluate(manifest, checkpoint, partition='test', device='cpu'):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__); sub = p.add_subparsers(dest='command', required=True)
-    t = sub.add_parser('train'); t.add_argument('manifest'); t.add_argument('checkpoint'); t.add_argument('--epochs', type=int, default=10); t.add_argument('--seed', type=int, default=42); t.add_argument('--lr', type=float, default=.001); t.add_argument('--hidden', type=int, default=128); t.add_argument('--device', choices=['cpu', 'cuda', 'auto'], default='cpu')
+    t = sub.add_parser('train'); t.add_argument('manifest'); t.add_argument('checkpoint'); t.add_argument('--epochs', type=int, default=10); t.add_argument('--seed', type=int, default=42); t.add_argument('--lr', type=float, default=.001); t.add_argument('--hidden', type=int, default=128); t.add_argument('--device', choices=['cpu', 'cuda', 'auto'], default='cpu'); t.add_argument('--progress', help='Private resumable epoch checkpoint')
     e = sub.add_parser('evaluate'); e.add_argument('manifest'); e.add_argument('checkpoint'); e.add_argument('--partition', choices=['validation', 'test'], default='test'); e.add_argument('--device', choices=['cpu', 'cuda', 'auto'], default='cpu')
     a=p.parse_args()
-    result = train(a.manifest,a.checkpoint,epochs=a.epochs,seed=a.seed,lr=a.lr,hidden=a.hidden,device=a.device) if a.command=='train' else evaluate(a.manifest,a.checkpoint,a.partition,device=a.device)
+    result = train(a.manifest,a.checkpoint,epochs=a.epochs,seed=a.seed,lr=a.lr,hidden=a.hidden,device=a.device,progress=a.progress) if a.command=='train' else evaluate(a.manifest,a.checkpoint,a.partition,device=a.device)
     print(json.dumps(result,indent=2))
 
 
