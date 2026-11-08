@@ -69,7 +69,7 @@ def test_dinov2_checkout_staged_locally_for_smoke_and_extraction():
     assert "'deepfake_dtw.stage_dinov2'" in config
     assert "'--source', str(DINO_DRIVE_SOURCE), '--destination', str(DINO_SOURCE)" in config
     smoke = next(s for s in sources if 'MODEL_SMOKE =' in s)
-    extraction = next(s for s in sources if "'-m', 'deepfake_dtw.extract'" in s)
+    extraction = next(s for s in sources if "'-m', 'deepfake_dtw.lavdf_recovery'" in s)
     assert 'str(DINO_SOURCE)' in smoke
     assert "'--dinov2-source', str(DINO_SOURCE)" in extraction
     assert 'DINO_DRIVE_SOURCE' not in smoke and 'DINO_DRIVE_SOURCE' not in extraction
