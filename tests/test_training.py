@@ -231,3 +231,25 @@ def test_training_and_evaluation_on_real_cuda_with_test_fixtures(tmp_path):
     result=train(str(manifest),str(checkpoint),epochs=1,hidden=4,device='cuda')
     assert result['device']=='cuda'
     assert evaluate(str(manifest),str(checkpoint),device='cuda')['device']=='cuda'
+
+
+def test_private_classifier_inference_requires_hash_and_matching_encoders(tmp_path):
+    from deepfake_dtw.inference import predict
+    import hashlib
+    rows=records(tmp_path); manifest=tmp_path/'manifest.json'; manifest.write_text(json.dumps(rows))
+    checkpoint=tmp_path/'head.pt'
+    train(str(manifest),str(checkpoint),epochs=1,hidden=4)
+    digest=hashlib.sha256(checkpoint.read_bytes()).hexdigest()
+    result=predict(rows[0]['feature_path'],str(checkpoint),checkpoint_sha256=digest)
+    assert result['classification'] in ('real','fake')
+    assert result['score_kind']=='uncalibrated sigmoid'
+    assert 0 <= result['score'] <= 1
+    with pytest.raises(ValueError, match='SHA-256 mismatch'):
+        predict(rows[0]['feature_path'],str(checkpoint),checkpoint_sha256='0'*64)
+    with pytest.raises(FileNotFoundError):
+        predict(rows[0]['feature_path'],str(tmp_path/'missing.pt'),checkpoint_sha256=digest)
+    artifact=torch.load(checkpoint, map_location='cpu', weights_only=True)
+    artifact['encoder_provenance']['audio']='different encoder'
+    modified=tmp_path/'different.pt'; torch.save(artifact,modified)
+    with pytest.raises(ValueError, match='encoder provenance'):
+        predict(rows[0]['feature_path'],str(modified),checkpoint_sha256=hashlib.sha256(modified.read_bytes()).hexdigest())
