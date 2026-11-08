@@ -65,6 +65,7 @@ def test_metrics_and_invalid_inputs():
     assert r['confusion_matrix']==[[1,1],[0,2]]
     assert r['accuracy']==.75 and r['recall']==1 and r['precision']==pytest.approx(2/3)
     assert r['roc_auc']==.75 and r['false_positive_rate']==.5
+    assert r['brier_score_uncalibrated']==pytest.approx((.01+.49+.16+.01)/4)
     assert metrics([1,1],[.2,.8])['roc_auc'] is None
     with pytest.raises(ValueError): metrics([],[])
     with pytest.raises(ValueError): metrics([0],[float('nan')])

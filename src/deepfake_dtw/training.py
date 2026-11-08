@@ -45,8 +45,8 @@ def read_features(path):
 
 def metrics(labels, scores, threshold=0.5):
     y = np.asarray(labels); s = np.asarray(scores, dtype=float)
-    if y.ndim != 1 or s.ndim != 1 or not len(y) or len(y) != len(s) or not np.isin(y, [0, 1]).all() or not np.isfinite(s).all() or not np.isfinite(threshold):
-        raise ValueError('Metrics require finite scores and nonempty binary labels')
+    if y.ndim != 1 or s.ndim != 1 or not len(y) or len(y) != len(s) or not np.isin(y, [0, 1]).all() or not np.isfinite(s).all() or np.any((s < 0) | (s > 1)) or not np.isfinite(threshold):
+        raise ValueError('Metrics require scores in [0, 1] and nonempty binary labels')
     pred = s >= threshold
     tp = int(((y == 1) & pred).sum()); tn = int(((y == 0) & ~pred).sum())
     fp = int(((y == 0) & pred).sum()); fn = int(((y == 1) & ~pred).sum())
@@ -55,7 +55,7 @@ def metrics(labels, scores, threshold=0.5):
     positive = s[y == 1]; negative = s[y == 0]
     # Pairwise rank statistic with half-credit for ties; no AUC for a single-class set.
     auc = float(((positive[:,None] > negative).sum() + .5*(positive[:,None] == negative).sum()) / (len(positive)*len(negative))) if len(positive) and len(negative) else None
-    return {'accuracy': (tp+tn)/len(y), 'precision': precision, 'recall': recall, 'f1': 2*precision*recall/(precision+recall) if precision+recall else 0.0, 'roc_auc': auc, 'false_positive_rate': fp/(fp+tn) if fp+tn else None, 'confusion_matrix': [[tn, fp], [fn, tp]], 'videos': len(y)}
+    return {'accuracy': (tp+tn)/len(y), 'precision': precision, 'recall': recall, 'f1': 2*precision*recall/(precision+recall) if precision+recall else 0.0, 'roc_auc': auc, 'brier_score_uncalibrated': float(np.mean((s-y)**2)), 'false_positive_rate': fp/(fp+tn) if fp+tn else None, 'confusion_matrix': [[tn, fp], [fn, tp]], 'videos': len(y)}
 
 
 def aggregate_by_video(items, scores):
