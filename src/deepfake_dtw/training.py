@@ -4,10 +4,11 @@ import hashlib
 import json
 import os
 import random
-import resource
 import time
 import tempfile
 from pathlib import Path
+
+from .resources import peak_rss_kib_linux
 
 import numpy as np
 import torch
@@ -223,7 +224,7 @@ def train(manifest, checkpoint, *, epochs=10, seed=42, lr=0.001, hidden=128, dev
             'training_videos': len({i['video_id'] for i in tr}), 'validation_videos': len(validation_videos),
             'dataset_origins': sorted({r['dataset'] for r in records}), 'manifest_sha256': manifest_digest,
             'checkpoint_sha256': checkpoint_digest, 'device': str(chosen), 'wall_seconds': time.perf_counter()-started,
-            'process_peak_rss_kib_linux': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
+            'process_peak_rss_kib_linux': peak_rss_kib_linux(),
             'note': 'Validation loss only; no calibration or effectiveness claim.'}
 
 

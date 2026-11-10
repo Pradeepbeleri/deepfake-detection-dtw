@@ -12,3 +12,7 @@ __pycache__/
 *.tar
 *.tar.*
 *.incomplete
+.env
+.env.*
+*.ckpt
+*.safetensors
