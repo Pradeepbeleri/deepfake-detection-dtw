@@ -14,6 +14,10 @@ REQUIRED = ('sample_id', 'label', 'source_identity', 'source_recordings', 'manip
 def validate(records, *, require_partition=True, check_files=True):
     if not isinstance(records, list) or not records:
         raise ValueError('Dataset must be a nonempty list')
+    scopes = {r.get('provenance_scope', 'identity_and_recording') for r in records if isinstance(r, dict)}
+    if len(scopes) != 1 or not scopes <= {'identity_and_recording', 'provider_source_recording'}:
+        raise ValueError('Manifest must have one recognized provenance scope')
+    scope = next(iter(scopes))
     ids = set()
     owners = {}
     paths = set()
@@ -21,15 +25,20 @@ def validate(records, *, require_partition=True, check_files=True):
     for r in records:
         if not isinstance(r, dict) or any(k not in r for k in REQUIRED):
             raise ValueError('Missing required provenance field')
-        for key in ('sample_id', 'source_identity', 'manipulation', 'dataset', 'usage_rights', 'video_id', 'video_path', 'feature_path'):
+        required_strings = ('sample_id', 'manipulation', 'dataset', 'usage_rights', 'video_id', 'video_path', 'feature_path')
+        if scope == 'identity_and_recording':
+            required_strings += ('source_identity',)
+        elif r['source_identity'] is not None or r.get('target_identity') is not None:
+            raise ValueError('Provider source scope must not assert unverified identities')
+        for key in required_strings:
             if not isinstance(r[key], str) or not r[key].strip():
                 raise ValueError(f'Invalid or missing {key}')
-        for key in ('sample_id', 'source_identity', 'dataset', 'usage_rights', 'video_id'):
+        for key in (('sample_id', 'source_identity', 'dataset', 'usage_rights', 'video_id') if scope == 'identity_and_recording' else ('sample_id', 'dataset', 'usage_rights', 'video_id')):
             if r[key].strip().lower() in ('unknown', 'n/a', 'not known', 'unspecified'):
                 raise ValueError(f'Unknown {key} cannot establish provenance')
         if r['label'] not in ('real', 'fake'):
             raise ValueError('Labels must be real or fake')
-        if r['label'] == 'fake' and (not isinstance(r.get('target_identity'), str) or not r['target_identity'].strip()):
+        if scope == 'identity_and_recording' and r['label'] == 'fake' and (not isinstance(r.get('target_identity'), str) or not r['target_identity'].strip()):
             raise ValueError('Fake samples require a known target identity for disjoint splitting')
         if r.get('target_identity') is not None and (not isinstance(r['target_identity'], str) or not r['target_identity'].strip() or r['target_identity'].strip().lower() in ('unknown', 'n/a', 'not known', 'unspecified')):
             raise ValueError('Invalid target identity')
@@ -65,7 +74,9 @@ def validate(records, *, require_partition=True, check_files=True):
         if partition is not None and partition not in PARTITIONS:
             raise ValueError('Invalid partition')
         # Identity and recording identifiers must be normalized globally by the importer.
-        keys = [('video', r['video_id']), ('identity', r['source_identity']), *[('recording', x) for x in r['source_recordings']]]
+        keys = [('video', r['video_id']), *[('recording', x) for x in r['source_recordings']]]
+        if r['source_identity'] is not None:
+            keys.append(('identity', r['source_identity']))
         if r.get('target_identity'):
             keys.append(('identity', r['target_identity']))
         for key in keys:
@@ -89,7 +100,9 @@ def split(records, seed=42):
         return i
     owners = {}
     for i, r in enumerate(records):
-        keys = [('v', r['video_id']), ('i', r['source_identity']), *[('r', x) for x in r['source_recordings']]]
+        keys = [('v', r['video_id']), *[('r', x) for x in r['source_recordings']]]
+        if r['source_identity'] is not None:
+            keys.append(('i', r['source_identity']))
         if r.get('target_identity'):
             keys.append(('i', r['target_identity']))
         for key in keys:
@@ -175,7 +188,7 @@ def main():
             Path(args.output).unlink(missing_ok=True)
             raise
         records = result
-    print(json.dumps({'samples': len(records), 'partitions': {k: sum(r.get('partition') == k for r in records) for k in PARTITIONS}, 'warning': 'Disjointness is conditional on complete, globally normalized metadata.'}))
+    print(json.dumps({'samples': len(records), 'partitions': {k: sum(r.get('partition') == k for r in records) for k in PARTITIONS}, 'provenance_scope': records[0].get('provenance_scope', 'identity_and_recording'), 'identity_disjoint_verified': False, 'warning': 'Leakage checks cover supplied metadata only; provider source scope does not establish identity-disjointness.'}))
 
 
 if __name__ == '__main__':

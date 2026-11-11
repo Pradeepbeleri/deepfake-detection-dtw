@@ -3,10 +3,11 @@ import argparse
 import hashlib
 import json
 import os
-import resource
 import sys
 import time
 from pathlib import Path
+
+from .resources import peak_rss_kib_linux
 
 import numpy as np
 import torch
@@ -89,7 +90,7 @@ def run(path, *, audio_checkpoint=None, visual_checkpoint=None, visual_sha256=No
         report['status'] = 'invalid_media' if isinstance(exc, MediaError) else 'error'
         report['reason'] = str(exc)
     report['wall_seconds'] = time.perf_counter() - started
-    report['process_peak_rss_kib_linux'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    report['process_peak_rss_kib_linux'] = peak_rss_kib_linux()
     return report
 
 

@@ -65,6 +65,7 @@ def test_metrics_and_invalid_inputs():
     assert r['confusion_matrix']==[[1,1],[0,2]]
     assert r['accuracy']==.75 and r['recall']==1 and r['precision']==pytest.approx(2/3)
     assert r['roc_auc']==.75 and r['false_positive_rate']==.5
+    assert r['brier_score_uncalibrated']==pytest.approx((.01+.49+.16+.01)/4)
     assert metrics([1,1],[.2,.8])['roc_auc'] is None
     with pytest.raises(ValueError): metrics([],[])
     with pytest.raises(ValueError): metrics([0],[float('nan')])
@@ -213,3 +214,81 @@ def test_training_does_not_parse_test_feature_arrays(tmp_path, monkeypatch):
     monkeypatch.setattr(training,'read_features',guarded)
     result=training.train(str(manifest),str(tmp_path/'head.pt'),epochs=1,hidden=4)
     assert 'validation_selected_threshold' in result
+
+
+def test_training_cuda_request_does_not_fallback(tmp_path):
+    if torch.cuda.is_available():
+        pytest.skip('CUDA available; covered by explicit CUDA integration test')
+    rows=records(tmp_path); manifest=tmp_path/'manifest.json'; manifest.write_text(json.dumps(rows))
+    with pytest.raises(RuntimeError, match='CUDA requested but unavailable'):
+        train(str(manifest), str(tmp_path/'head.pt'), epochs=1, hidden=4, device='cuda')
+    assert not (tmp_path/'head.pt').exists()
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason='Requires actual CUDA GPU')
+def test_training_and_evaluation_on_real_cuda_with_test_fixtures(tmp_path):
+    rows=records(tmp_path); manifest=tmp_path/'manifest.json'; manifest.write_text(json.dumps(rows))
+    checkpoint=tmp_path/'head.pt'
+    result=train(str(manifest),str(checkpoint),epochs=1,hidden=4,device='cuda')
+    assert result['device']=='cuda'
+    assert evaluate(str(manifest),str(checkpoint),device='cuda')['device']=='cuda'
+
+
+def test_private_classifier_inference_requires_hash_and_matching_encoders(tmp_path):
+    from deepfake_dtw.inference import predict
+    import hashlib
+    rows=records(tmp_path); manifest=tmp_path/'manifest.json'; manifest.write_text(json.dumps(rows))
+    checkpoint=tmp_path/'head.pt'
+    train(str(manifest),str(checkpoint),epochs=1,hidden=4)
+    digest=hashlib.sha256(checkpoint.read_bytes()).hexdigest()
+    result=predict(rows[0]['feature_path'],str(checkpoint),checkpoint_sha256=digest)
+    assert result['classification'] in ('real','fake')
+    assert result['score_kind']=='uncalibrated sigmoid'
+    assert 0 <= result['score'] <= 1
+    with pytest.raises(ValueError, match='SHA-256 mismatch'):
+        predict(rows[0]['feature_path'],str(checkpoint),checkpoint_sha256='0'*64)
+    with pytest.raises(FileNotFoundError):
+        predict(rows[0]['feature_path'],str(tmp_path/'missing.pt'),checkpoint_sha256=digest)
+    artifact=torch.load(checkpoint, map_location='cpu', weights_only=True)
+    artifact['encoder_provenance']['audio']='different encoder'
+    modified=tmp_path/'different.pt'; torch.save(artifact,modified)
+    with pytest.raises(ValueError, match='encoder provenance'):
+        predict(rows[0]['feature_path'],str(modified),checkpoint_sha256=hashlib.sha256(modified.read_bytes()).hexdigest())
+
+
+def test_resumable_training_matches_uninterrupted_fixture(tmp_path, monkeypatch):
+    rows=records(tmp_path); manifest=tmp_path/'manifest.json'; manifest.write_text(json.dumps(rows))
+    progress=tmp_path/'progress.pt'; output=tmp_path/'resumed.pt'; original=torch.optim.Adam.step
+    calls={'n':0}
+    def interrupt(self, *args, **kwargs):
+        calls['n'] += 1
+        if calls['n'] == 2:
+            raise RuntimeError('synthetic interruption')
+        return original(self, *args, **kwargs)
+    monkeypatch.setattr(torch.optim.Adam, 'step', interrupt)
+    with pytest.raises(RuntimeError, match='synthetic interruption'):
+        train(str(manifest),str(output),epochs=2,hidden=4,seed=7,progress=str(progress))
+    assert progress.is_file() and not output.exists()
+    monkeypatch.setattr(torch.optim.Adam, 'step', original)
+    with pytest.raises(ValueError, match='does not match'):
+        train(str(manifest),str(output),epochs=2,hidden=4,seed=8,progress=str(progress))
+    train(str(manifest),str(output),epochs=2,hidden=4,seed=7,progress=str(progress))
+    baseline=tmp_path/'baseline.pt'; train(str(manifest),str(baseline),epochs=2,hidden=4,seed=7)
+    resumed=torch.load(output, weights_only=True); full=torch.load(baseline, weights_only=True)
+    assert all(torch.equal(resumed['state_dict'][key], full['state_dict'][key]) for key in full['state_dict'])
+    assert resumed['threshold'] == full['threshold']
+
+
+def test_source_group_training_does_not_claim_identity_disjointness(tmp_path):
+    rows=records(tmp_path)
+    for row in rows:
+        row.update(provenance_scope='provider_source_recording', source_identity=None, target_identity=None)
+    manifest=tmp_path/'source-manifest.json'; manifest.write_text(json.dumps(rows))
+    checkpoint=tmp_path/'source-head.pt'
+    report=train(str(manifest),str(checkpoint),epochs=1,hidden=4)
+    assert report['provenance_scope'] == 'provider_source_recording'
+    assert report['identity_disjoint_verified'] is False
+    held_out=evaluate(str(manifest),str(checkpoint))
+    assert held_out['identity_disjoint_verified'] is False
+    with pytest.raises(ValueError, match='requires audited identity'):
+        experiment(str(manifest), str(tmp_path/'alignment.pt'), epochs=1)

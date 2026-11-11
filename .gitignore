@@ -7,3 +7,12 @@ __pycache__/
 *.pt
 *.mp4
 *.pth
+
+# Private datasets and interrupted downloads
+*.tar
+*.tar.*
+*.incomplete
+.env
+.env.*
+*.ckpt
+*.safetensors

@@ -111,14 +111,26 @@ def verify_dinov2_source(path: str) -> None:
     """Require the pinned official checkout without local changes before executing it."""
     import subprocess
     root = Path(path).resolve()
-    try:
-        top = subprocess.run(['git', '-C', str(root), 'rev-parse', '--show-toplevel'], check=True, capture_output=True, text=True, timeout=10).stdout.strip()
-        head = subprocess.run(['git', '-C', str(root), 'rev-parse', 'HEAD'], check=True, capture_output=True, text=True, timeout=10).stdout.strip()
-        status = subprocess.run(['git', '-C', str(root), 'status', '--porcelain', '--untracked-files=all'], check=True, capture_output=True, text=True, timeout=10).stdout
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise ValueError('DINOv2 source must be a clean pinned Git checkout') from exc
-    if Path(top).resolve() != root or head != DINOV2_COMMIT or status:
-        raise ValueError('DINOv2 source must be a clean checkout at the pinned commit')
+
+    def git(operation, *args):
+        try:
+            return subprocess.run(['git', '-C', str(root), *args], check=True,
+                                  capture_output=True, text=True, timeout=10).stdout
+        except subprocess.TimeoutExpired as exc:
+            raise ValueError(f'DINOv2 Git {operation} timed out after 10 seconds. '
+                             'Stage the source checkout on local storage and retry; verification was not bypassed.') from exc
+        except (OSError, subprocess.CalledProcessError) as exc:
+            raise ValueError(f'DINOv2 Git {operation} failed; source must be an accessible pinned Git checkout.') from exc
+
+    top = git('repository check', 'rev-parse', '--show-toplevel').strip()
+    head = git('commit check', 'rev-parse', 'HEAD').strip()
+    status = git('working-tree status', 'status', '--porcelain', '--untracked-files=all')
+    if Path(top).resolve() != root:
+        raise ValueError('DINOv2 source must be the root of its Git checkout')
+    if head != DINOV2_COMMIT:
+        raise ValueError(f'DINOv2 checkout is not at the pinned commit {DINOV2_COMMIT}')
+    if status:
+        raise ValueError('DINOv2 checkout must have a clean working tree, including untracked files')
 
 
 class DinoVisualEncoder:
