@@ -1,5 +1,5 @@
 export type Health = { service: string; model: 'unavailable' | 'configured_unverified'; note: string };
-export type Analysis = { classification: { classification: 'real' | 'fake'; score: number; threshold: number; score_kind: string; warning: string }; timing: { status: string; audio_times_seconds?: number[]; video_times_seconds?: number[]; median_video_minus_audio_seconds?: number; normalized_cost?: number; reason?: string; caveat?: string }; warning: string };
+export type Analysis = { classification: { classification: 'real' | 'fake'; score: number; threshold: number; score_kind: string; warning: string }; timing: { status: string; audio_times_seconds?: number[]; video_times_seconds?: number[]; median_video_minus_audio_seconds?: number; normalized_cost?: number; reason?: string; caveat?: string; signals?: {audio_times_seconds: number[]; audio_rms: number[]; video_times_seconds: number[]; lip_aperture: number[]}; cross_correlation?: {status: string; offset_seconds?: number; correlation?: number; search_boundary?: boolean} }; warning: string };
 export type Job = { status: 'queued' | 'processing' | 'interrupted' | 'failed' | 'completed_research_only'; error?: string; result?: Analysis };
 
 export function validateFile(file: Pick<File, 'name' | 'size'>): string | null {
@@ -35,6 +35,13 @@ export async function getJob(id: string, token: string, signal?: AbortSignal): P
         !Number.isFinite(classification.threshold) || classification.score_kind !== 'uncalibrated sigmoid' ||
         typeof classification.warning !== 'string' || !timing || typeof timing.status !== 'string') throw new Error('The service returned an incomplete or unsupported result.');
     if (timing.status === 'experimental_unvalidated' && (!Array.isArray(timing.audio_times_seconds) || !Array.isArray(timing.video_times_seconds) || timing.audio_times_seconds.length === 0 || timing.audio_times_seconds.length !== timing.video_times_seconds.length || !timing.audio_times_seconds.every(Number.isFinite) || !timing.video_times_seconds.every(Number.isFinite))) throw new Error('The service returned an invalid experimental timing path.');
+    if (timing.signals) {
+      const s = timing.signals;
+      for (const [t, v] of [[s.audio_times_seconds, s.audio_rms], [s.video_times_seconds, s.lip_aperture]]) {
+        if (!Array.isArray(t) || !Array.isArray(v) || t.length < 2 || t.length > 2000 || t.length !== v.length || !t.every(Number.isFinite) || !v.every(Number.isFinite) || !t.every((x: number, i: number) => i === 0 || x > t[i-1])) throw new Error('The service returned invalid timing signals.');
+      }
+    }
+    if (timing.cross_correlation?.status === 'experimental_unvalidated' && (!Number.isFinite(timing.cross_correlation.offset_seconds) || !Number.isFinite(timing.cross_correlation.correlation))) throw new Error('The service returned an invalid correlation result.');
   }
   return value as Job;
 }

@@ -56,8 +56,16 @@ def _timing(video):
         detector.close()
     audio_times, energy = audio_energy(audio)
     aligned = constrained_dtw(audio_times, energy, video_times, opening)
+    from .sync_experiment import cross_correlation
+    try:
+        correlation = {'status': 'experimental_unvalidated', **cross_correlation(audio_times, energy, video_times, opening)}
+    except ValueError:
+        correlation = {'status': 'unavailable'}
     return {'status': 'experimental_unvalidated', 'audio_times_seconds': aligned['audio_times'].tolist(),
             'video_times_seconds': aligned['video_times'].tolist(),
+            'signals': {'audio_times_seconds': audio_times.tolist(), 'audio_rms': energy.tolist(),
+                        'video_times_seconds': video_times.tolist(), 'lip_aperture': opening.tolist()},
+            'cross_correlation': correlation,
             'median_video_minus_audio_seconds': aligned['median_video_minus_audio_seconds'],
             'normalized_cost': aligned['normalized_cost'], 'caveat': aligned['caveat'],
             'used_for_prediction': False}
