@@ -10,6 +10,7 @@ For the recorded LAV-DF experiment and inference command, see [local research in
 - [System architecture](docs/system-architecture.md)
 - [Implementation roadmap](docs/implementation-roadmap.md)
 - [Experimental design](docs/experimental-design.md)
+- [Controlled DTW research validation and V2 protocol](docs/dtw-research-validation.md)
 - [Product vision](docs/product-vision.md)
 - [Design principles](docs/design-principles.md)
 
