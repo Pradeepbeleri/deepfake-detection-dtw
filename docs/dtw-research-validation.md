@@ -60,3 +60,56 @@ Correlation outperformed the chosen DTW path statistic on this particular timest
 4. Report video-level accuracy, precision, recall, F1, ROC-AUC where defined, false-positive rate, confusion matrix, per-class sample counts, source-clustered uncertainty and failure cases. Include a simple-lag feature control and state whether DTW improves, worsens or does not measurably change results. Do not interpret raw cost as proof of manipulation.
 
 Additional independently consented talking-face clips with verified relationships and approved training/development LAV-DF media are needed. The current environment does not contain the private LAV-DF corpus or a new independent held-out set. GPU training and the V2 ablation were not initiated.
+
+## Phase 3: physical global-delay and local-drift smoke tests
+
+The previous ±400 ms path statistic is not a global delay estimator. `deepfake_dtw.global_sync` now searches audio/video candidate lags from −3 to +3 seconds in 40 ms steps. For each candidate it evaluates normalized correlation on the same non-padded audio-time window, with at least 3 seconds of common support across the entire search. Positive lag means the matching video event is later than audio. Silent/flat, discontinuous and insufficient inputs are rejected. Correlation below 0.15 or a competing peak within 0.02 of the best at least 0.4 s away produces a **rejected** result. These numerical thresholds are uncalibrated engineering heuristics; passing them does not establish that RMS and lip motion correspond. The output retains candidate lag, correlation, peak margin, support, boundary and quality diagnostics. Search boundary hits and close alternatives demand special scrutiny.
+
+Only after a global candidate passes those heuristics, the research path subtracts the candidate from a **copy** of the video timestamps and runs the existing ±400 ms constrained DTW. It retains original video path timestamps, local offset/warping and boundary metrics. A direct no-warp normalized absolute difference is also reported. DTW path cost is divided by path length; direct cost is divided by sample count, so the two cost values alone do not prove better physical alignment. This pipeline does not call the classifier. It is **not integrated into the website**, because the measurements below do not yet support reliable global-delay interpretation. The existing website's smaller-band exploratory plot remains distinct from the V1 prediction.
+
+### Physically shifted playback, one clip
+
+On 11 November 2026, the single consented 12-second non-test clip used previously was transformed into eleven private temporary MP4s. Video was stream-copied. Audio was re-encoded as mono 16 kHz AAC: positive shifts add leading silence, negative shifts trim the audio beginning, and both pad or truncate to the original duration. The zero-shift control underwent the same transcode. FFprobe checked each generated stream's initial timestamps and duration; synthetic fixture tests also verified the actual position of an audio transient after ±1 s shifts. The source's audio/video stream starts coincided, but its natural speech/lip offset is unknown. Files were deleted after analysis; neither the original nor V1 artifacts were changed. The 11 imposed audio delays were −3, −2, −1, −0.5, −0.2, 0, +0.2, +0.5, +1, +2 and +3 seconds. A positive imposed delay is later audio, so the expected *change* in video-minus-audio offset is negative.
+
+Errors below are absolute differences between each method's response relative to its zero-shift control and the known imposed change. They are **not absolute natural-synchronization errors**. In particular, the zero-shift cross-correlation candidate was −1.0 s; that is an unvalidated numerical result, not an established natural offset. The accepted results do not show reliable synchronization detection.
+
+| Imposed audio delay (ms) | Global correlation error (ms) | Global + local DTW error (ms) |
+| ---: | ---: | ---: |
+| −3000 | 640 | 560 |
+| −2000 | 640 | 600 |
+| −1000 | rejected | unavailable |
+| −500 | 2100 | 2100 |
+| −200 | 0 | 40 |
+| 0 | 0 | 0 |
+| +200 | 1680 | 1720 |
+| +500 | rejected | unavailable |
+| +1000 | 4920 | 4800 |
+| +2000 | 4920 | 4800 |
+| +3000 | rejected | unavailable |
+
+| Method | Measured / attempted | Mean / median error among measured | Correct direction among measured nonzero shifts | Within 200 ms among all attempts |
+| --- | ---: | ---: | ---: | ---: |
+| Fixed zero | 11 / 11 | 1218.18 / 1000 ms | 0 / 10 | 3 / 11 |
+| Global correlation | 8 / 11 | 1862.50 / 1160 ms | 5 / 7 | 2 / 11 |
+| Global + local DTW | 8 / 11 | 1827.50 / 1160 ms | 5 / 7 | 2 / 11 |
+
+The ±40, ±80 and ±160 ms success counts are also 2/11 for both correlation and global+DTW; the zero case is included. Their measured-only rates are 2/8 at each threshold. Rejections are retained in the denominator for the all-attempted rates. None of the 11 correlation candidates hit the ±3 s boundary; all eight computed local DTW paths touched the ±0.4 s local boundary. DTW's lower mean error by 35 ms on the eight accepted cases is not evidence of a useful improvement: errors remain large, three cases are unavailable, and only one clip was used.
+
+As an exploratory alternative, replacing aperture with its time derivative yielded 8/11 accepted estimates, measured-only mean/median errors of 1110/30 ms for correlation and 1120/10 ms for global+DTW; both were within 200 ms on 5/11 attempts and both got 4/7 nonzero directions correct among measured cases. This apparent median change is not evidence of generalization; outliers and rejections remain substantial. Both representations compare signals without verified correspondence.
+
+The physical-shift run took 83.00 s on CPU; peak Python-process RSS was 1,275,544 KiB, excluding FFmpeg children. Python 3.12.14, NumPy 1.26.4, PyTorch 2.5.1+cpu, MediaPipe 0.10.21 and FFmpeg/ffprobe 7.1.5 were used. The private report retains per-case outputs, durations, quality rejections, versions and code hashes. These are measurements from one speaker only; speaker variability and statistical confidence intervals are not available.
+
+### Separate local-drift smoke test
+
+On the same clip, separate temporary controls used pitch-preserving FFmpeg `atempo` factors 1.00, 0.95 and 1.05, padded or trimmed to the source duration. Individual speech-event timing after `atempo` was not independently verified. The 1.00 control passed provisional gating; its global-only direct cost was 1.074 and its normalized DTW-path cost 0.454, with the DTW path touching the band. Both stretched cases were **rejected as ambiguous**, so there is no local DTW result for either and no evidence that DTW corrected real drift. The apparent lower control path cost is not a meaningful alignment improvement because path length and per-time-sample cost have different denominators and no alignment ground truth was established. This separate run took 26.04 s and peak Python-process RSS was 1,298,924 KiB, excluding FFmpeg children.
+
+### Run additional development clips
+
+Use private, consented MP4 recordings known not to belong to the original held-out evaluation. Each needs one audio and one video stream, duration 9.5–30 seconds, video dimensions within the decoder limit, and source stream start timestamps within 50 ms. More speakers, conditions, verified original synchronization and source/identity provenance are necessary for a defensible benchmark. Allow roughly the measured CPU time and private temporary space per recording. Do not commit the inputs or reports.
+
+```bash
+OMP_NUM_THREADS=2 .venv/bin/python -m deepfake_dtw.physical_sync_experiment /private/consented-development.mp4 /private/physical-shift-report.json --consented-non-test
+OMP_NUM_THREADS=2 .venv/bin/python -m deepfake_dtw.local_drift_experiment /private/consented-development.mp4 /private/local-drift-report.json --consented-non-test
+```
+
+Both commands refuse to overwrite reports, remove temporary MP4s, retain per-condition failures, and keep reports mode 0600. The consent/non-test flag is an operator attestation. Inspect all rejection and boundary fields; do not discard failed clips or pool repeated shifts as independent speakers. Multi-recording evaluation, identity-aware provenance, validated ground-truth synchronization, calibrated quality gates and the matched V2 classification ablation remain open. No deepfake accuracy improvement has been measured.
