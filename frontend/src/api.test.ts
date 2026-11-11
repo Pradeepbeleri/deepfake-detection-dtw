@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getHealth, getJob, upload, validateFile } from './api';
+import { deleteJob, getHealth, getJob, upload, validateFile } from './api';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -38,5 +38,31 @@ describe('research API integration', () => {
     const progress: (number|null)[] = [];
     expect(await upload({} as File, 'test', value => progress.push(value))).toBe('a'.repeat(32));
     expect(sent).toBe(true); expect(progress).toEqual([50]);
+  });
+});
+
+
+describe('private result deletion', () => {
+  it('sends an authenticated delete request', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, {status:204}));
+    vi.stubGlobal('fetch', fetchMock);
+    await deleteJob('a'.repeat(32), 'private-token');
+    expect(fetchMock.mock.calls[0][1].method).toBe('DELETE');
+    expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe('Bearer private-token');
+  });
+  it('surfaces a running-job conflict without pretending it was deleted', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({detail:'Wait until finished'}), {status:409})));
+    await expect(deleteJob('a'.repeat(32), 'private-token')).rejects.toThrow('Wait until finished');
+  });
+});
+
+describe('result integrity', () => {
+  it('rejects malformed scores instead of rendering a fabricated result', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({status:'completed_research_only',result:{classification:{classification:'real',score:null,threshold:.5,score_kind:'uncalibrated sigmoid',warning:'test'},timing:{status:'unavailable'}}}))));
+    await expect(getJob('a'.repeat(32), 'test')).rejects.toThrow('incomplete or unsupported result');
+  });
+  it('rejects missing experimental timing paths', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({status:'completed_research_only',result:{classification:{classification:'real',score:.2,threshold:.5,score_kind:'uncalibrated sigmoid',warning:'test'},timing:{status:'experimental_unvalidated'}}}))));
+    await expect(getJob('a'.repeat(32), 'test')).rejects.toThrow('invalid experimental timing path');
   });
 });

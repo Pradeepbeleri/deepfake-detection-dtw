@@ -10,6 +10,6 @@ npm ci
 npm run dev
 ```
 
-Open the printed `http://127.0.0.1:5173/` address. Upload a consented MP4 up to 100 MB and at most 30 seconds and use the local bearer token configured for the API. An interrupted, failed or unavailable model is shown explicitly. The displayed classifier score is uncalibrated; DTW results are experimental and unvalidated. No user media or token is included in Git. This UI does not yet offer cancellation, full accessibility certification, production reverse-proxy configuration or public deployment security.
+Open the printed `http://127.0.0.1:5173/` address. Upload a consented MP4 up to 100 MB and at most 30 seconds and use the local bearer token configured for the API. An interrupted, failed or unavailable model is shown explicitly. The displayed classifier score is uncalibrated; DTW results are experimental and unvalidated. No user media or token is included in Git. Completed and failed job results can be deleted from the current session; the UI cannot recover the job ID after a page refresh. This UI does not yet offer cancellation, full accessibility certification, production reverse-proxy configuration or public deployment security.
 
 `npm run build` performs a TypeScript check and production bundle; `npm test` runs unit tests. A production static deployment would need its own explicitly secured same-origin `/api` proxy; Vite's development proxy does not apply to the bundle.
