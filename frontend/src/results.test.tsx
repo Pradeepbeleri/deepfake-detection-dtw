@@ -14,6 +14,8 @@ describe('result rendering: synthetic fixtures only', () => {
     expect(html).toContain('Model label: real');
     expect(html).toContain('0.114');
     expect(html).toContain('Uncalibrated · not a probability');
+    expect(html).toContain('decision threshold 0.495');
+    expect(html).toContain('not a manipulated-segment timeline');
     expect(html).toContain('EXPERIMENTAL');
     expect(html).toContain('not been validated as synchronization evidence');
     expect(html).toContain('DTW is not used by the classifier.');

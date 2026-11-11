@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { deleteJob, getHealth, getJob, upload, validateFile } from './api';
+import { deleteJob, getHealth, getJob, upload, validateFile, validateVideoMetadata } from './api';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -9,6 +9,12 @@ describe('video input validation', () => {
     expect(validateFile({ name: 'talking.mov', size: 10 })).toMatch(/MP4/);
     expect(validateFile({ name: 'talking.mp4', size: 0 })).toMatch(/empty/);
     expect(validateFile({ name: 'talking.mp4', size: 100_000_001 })).toMatch(/100 MB/);
+  });
+  it('checks browser metadata without treating it as a stream integrity check', () => {
+    expect(validateVideoMetadata(30, 1920, 1080)).toBeNull();
+    expect(validateVideoMetadata(30.01, 640, 480)).toMatch(/30-second/);
+    expect(validateVideoMetadata(NaN, 640, 480)).toMatch(/duration/);
+    expect(validateVideoMetadata(2, 3840, 2160)).toMatch(/dimensions/);
   });
 });
 
