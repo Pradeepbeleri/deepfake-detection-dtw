@@ -9,6 +9,13 @@ export function validateFile(file: Pick<File, 'name' | 'size'>): string | null {
   return null;
 }
 
+export function validateVideoMetadata(duration: number, width: number, height: number): string | null {
+  if (!Number.isFinite(duration) || duration <= 0) return 'The browser could not read a valid video duration.';
+  if (duration > 30) return 'This video is longer than the 30-second limit.';
+  if (!width || !height || width * height > 1920 * 1080) return 'Video dimensions are invalid or exceed the supported pixel limit.';
+  return null;
+}
+
 async function checked(response: Response) {
   if (!response.ok) {
     let message = `Request failed (${response.status}).`;

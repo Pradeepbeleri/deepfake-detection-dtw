@@ -33,11 +33,23 @@ npm ci
 npm run dev
 ```
 
-Open the printed `http://127.0.0.1:5173/` address, enter the same token, and choose a consented talking-face MP4. The browser shows actual upload progress and server queue/processing states. The API deletes its upload and per-job feature workspace on completion or handled failure. A completed or failed job report remains in the configured private storage until **Delete saved result** is selected; the browser currently cannot recover a job ID after the page is refreshed. If the submission response is lost or the page is closed, a private result can remain without a visible deletion control; inspect the dedicated private job directory on the service machine. Do not expose the Vite or Uvicorn port publicly or through a remote proxy.
+Open the printed `http://127.0.0.1:5173/` address, enter the same token, and choose a consented talking-face MP4. The preview plays the embedded audio, and the browser checks duration and dimensions before submitting; the service independently validates the actual streams. The browser shows actual upload progress and server queue/processing states. The API deletes its upload and per-job feature workspace on completion or handled failure. A completed or failed job report remains in configured private storage until **Delete saved result** is selected. Save the displayed job ID to recover it after a refresh using **Recover a saved job** and the same access token. If the submission response is lost before its job ID is displayed, inspect the dedicated private job directory on the service machine. Do not expose the Vite or Uvicorn port publicly or through a remote proxy.
+
+The browser labels separate audio/video mode unavailable. A separate local research probe exists for consented files:
+
+```bash
+.venv/bin/python -m deepfake_dtw.separate_media --video /private/video.mp4 --audio /private/audio.wav --audio-offset-seconds 0
+```
+
+Supply a known, operator-declared offset; positive means audio starts later relative to video. The probe normalizes each input to its first decoded timestamp, applies that offset, transcodes a temporary MPEG-4/AAC pair, verifies supported media and attempts the existing experimental timing computation. It removes the temporary file. It does **not** validate that the recordings are synchronized, establish signal correspondence, or call the classifier. The measured output offset may differ slightly because of codec and timestamp behavior. Only use permitted local media. Real separate-file synchronization, classifier compatibility and safe browser/API integration remain unverified.
+
+On 11 November 2026, this probe was also run with the consented 12-second MP4 supplied as both sources and a declared zero offset. It returned an experimental 405-pair DTW path with a measured zero initial timestamp offset; the classifier was not called. This checks the mechanics on real streams from one container, not independently recorded files or synchronization accuracy. Synthetic fixtures additionally exercise positive and negative declared offsets and the no-face failure path.
 
 ## Observed verification
 
 On 11 November 2026, a Chromium browser uploaded the existing consented 12-second clip to the loopback frontend and API, using the verified real Whisper, DINOv2 and classifier checkpoints. The actual response was rendered as the model label `real`, with fake-class score `0.114` and threshold `0.495` shown as uncalibrated; experimental DTW appeared separately. A browser run including a preceding invalid-MP4 failure took 58.78 seconds on this CPU environment. The test deleted the saved result and verified that the upload and temporary job workspace were empty. This is one functional demonstration, not an accuracy measurement. No held-out data were re-evaluated.
+
+The updated workspace was subsequently exercised with the same private clip and checkpoints. It rejected an invalid fixture in the browser, rendered the real result, recovered it by job ID after a refresh, and deleted the result; upload and temporary-work cleanup and a 390-pixel viewport overflow check passed. The run took 55.17 seconds through result rendering, including the invalid-file check. This is a functional check on the same single clip, not a new evaluation.
 
 Automated fixture tests cover input size and content type, authentication, queue limits, failures, job deletion, interrupted uploads, timeout process-group handling and result semantics. The browser also checked a 390-pixel viewport for horizontal overflow. These are not a complete accessibility or security audit.
 
