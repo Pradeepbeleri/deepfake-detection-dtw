@@ -25,4 +25,11 @@ describe('result rendering: synthetic fixtures only', () => {
     expect(html).toContain('Timing analysis unavailable');
     expect(html).not.toContain('<polyline');
   });
+  it('plots only supplied signal samples and labels the separate scales', () => {
+    const timing = {...fixture.timing, signals: {audio_times_seconds:[0,1], audio_rms:[.2,.4], video_times_seconds:[0,1], lip_aperture:[.1,.3]}, cross_correlation:{status:'experimental_unvalidated',offset_seconds:.2,correlation:.4}};
+    const html=renderToStaticMarkup(<ResultDetails result={{...fixture,timing}}/>);
+    expect(html).toContain('EXTRACTED SIGNALS');
+    expect(html).toContain('Each vertical scale is normalized separately');
+    expect(html).toContain('Cross-correlation lag: 0.200 s');
+  });
 });
