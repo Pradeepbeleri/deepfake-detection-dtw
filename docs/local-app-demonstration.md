@@ -59,4 +59,21 @@ Installed package metadata identifies PyTorch/torchvision and Starlette/Uvicorn 
 
 The LAV-DF provider terms and underlying VoxCeleb2 conditions require review for model-derived artifacts and the intended use; dataset access does not itself authorize a public or commercial service. The official AV-HuBERT terms also include noncommercial, biometric-processing, surveillance and production restrictions; AV-HuBERT is not used by this baseline. Confirm actual encoder, data and derived-model rights with the institution or rights holders as appropriate.
 
+### Known vulnerable dependencies (15 November 2026)
+
+`pip-audit` against the pinned environment reports **26 known advisories**: 23 affecting
+`torch` 2.5.1 and 3 affecting `starlette` 0.46.2. They are **not fixed**, deliberately:
+
+- The pinned stack is what the recorded LAV-DF experiment ran on. Upgrading `torch` would
+  break reproducibility of the one evaluation this project reports, and the handoff constraint
+  is that the trained classifier, its threshold and its recorded evaluation stay unchanged.
+- The exposure is bounded by how the service is run: loopback-only, single operator, bearer
+  token, no untrusted input other than a local MP4 the operator chose, checkpoints loaded only
+  after a full SHA-256 match, and `torch.load` restricted with `weights_only=True`.
+
+This is a *rationale for accepting the risk in a local research prototype*, not a claim that
+the dependencies are safe. **Anything beyond local single-operator research must upgrade the
+stack first and re-validate**, accepting that the recorded metrics would then need to be
+re-derived. Re-run `pip-audit` before any such change; the advisory set grows over time.
+
 A shared local token, no TLS, no per-user access control, no per-client rate limiting, no hardened media sandbox, no external security review and limited recovery after a forced process kill make this unsuitable for public deployment. The timeout kills the inference process group during normal operation, but a forced server kill can leave a child process requiring operating-system supervision. A public release also needs a privacy/retention policy, robust authentication and transport security, independent security and accessibility review, broader evaluation, and deployment-rights review. Do not treat this local test as production readiness.

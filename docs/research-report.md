@@ -800,6 +800,13 @@ blocked in this environment; the resulting `torch` is `2.5.1+cu124` rather than 
 full test suite passes (135 passed, 1 skipped) and no numerical result in this report was
 re-derived here. The recorded experiments were produced in their original environments.
 
+**Security posture of the pinned stack.** `pip-audit` reports 26 known advisories against the
+pinned dependencies (23 `torch` 2.5.1, 3 `starlette` 0.46.2). These are not patched, because
+upgrading would break reproducibility of the recorded evaluation. The prototype's exposure is
+bounded by loopback-only single-operator use, hash-verified checkpoints and `weights_only=True`
+loading, but this is an accepted risk in a research prototype, not a safe configuration for
+anything wider.
+
 **What could not be verified at all.** The motivating paper was never retrievable; no claim about
 it is first-hand. Genuine end-to-end inference could not be re-run during finalisation because
 the private checkpoints are not present in this environment.
@@ -938,6 +945,7 @@ biometric processing. **Not used in this project** for that reason.
 | [Dataset acquisition](dataset-acquisition.md) | LAV-DF access and provenance procedures |
 | [Local inference](local-inference.md) · [Local application](local-app-demonstration.md) | Reproducing the demonstration |
 | [Implementation history](implementation-history.md) | Dated build log |
+| [Demonstration script](demonstration-script.md) | Faculty walkthrough |
 
 Figures in this report are generated from the recorded experiment values by
 [`figures/make_figures.py`](figures/make_figures.py). No value in any figure is simulated,

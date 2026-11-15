@@ -233,7 +233,16 @@ Full methodology, per-shift rows, rejection accounting and the V2 protocol are i
 - **Unknown ground-truth synchronization.** The source recording's natural audio/lip offset was
   never measured, so absolute synchronization accuracy cannot be claimed.
 - **Local research only.** Shared token, no TLS, no per-user access control, no rate limiting,
-  no hardened media sandbox, no external security or accessibility audit.
+  no hardened media sandbox, no external security review.
+- **Known vulnerable dependencies.** `pip-audit` reports 26 advisories against the pinned
+  stack (23 `torch` 2.5.1, 3 `starlette` 0.46.2). They are deliberately not patched, because
+  upgrading would break reproducibility of the one recorded evaluation; the exposure is bounded
+  by loopback-only single-operator use, hash-verified checkpoints and `weights_only=True`
+  loading. **Upgrade before any use beyond that.** See
+  [local application](docs/local-app-demonstration.md#known-vulnerable-dependencies-15-november-2026).
+- **Accessibility partially verified.** Contrast, target size, keyboard focus, heading structure
+  and responsive reflow were checked in Chromium; screen-reader, reduced-motion and
+  forced-colors behaviour were not.
 - **Dataset and model rights are separate from code licence.** See
   [research feasibility](docs/research-feasibility.md) and
   [local application](docs/local-app-demonstration.md#license-privacy-and-deployment-limits).
@@ -283,6 +292,7 @@ outside the checkout is the real protection.
 | [System architecture](docs/system-architecture.md) | The system as actually built, component by component |
 | [Controlled DTW research validation](docs/dtw-research-validation.md) | DTW methodology, all experiments, negative results, V2 protocol |
 | [Research report](docs/research-report.md) | Full academic report: methodology, mathematics, results, analysis |
+| [Demonstration script](docs/demonstration-script.md) | 10–12 minute faculty walkthrough, with the questions to expect |
 | [Local research inference](docs/local-inference.md) | Recorded experiment, checkpoint transfer, CLI usage |
 | [Local research application](docs/local-app-demonstration.md) | Running the API and frontend, verified behaviour, deployment limits |
 | [Experimental design](docs/experimental-design.md) | Preregistered comparison plan and what has been executed |
