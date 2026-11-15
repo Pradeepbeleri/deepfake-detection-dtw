@@ -739,22 +739,52 @@ the unshifted control in Experiment 2 is a concrete symptom.
 is maximally favourable to any translation-equivariant estimator. DTW failing *there* is more
 damaging to the hypothesis than its failure on the harder physical shifts.
 
-### 19.3 What would have followed, and why we stopped
+### 19.2a The ablation, now run
 
-The pre-registered plan ([experimental design](experimental-design.md)) gates the arm A versus
-arm B ablation on first validating the timing signals. That gate was not passed. Training a
-DTW-augmented classifier at this point would have produced a number — possibly even a favourable
-one — built on features with no demonstrated relationship to synchronisation. Any gain could then
-be attributed to added model capacity or to incidental correlations with speaker or compression,
-and we would have had no way to tell. Reporting "no demonstrated benefit" is the defensible
-outcome; manufacturing an ablation would not have been.
+Sections 17–18 evaluated DTW as a *delay estimator* and it failed. A separate question is
+whether the DTW **feature vector** carries deepfake signal even if its offset estimate is poor.
+That ablation has since been run on the 180-video LAV-DF subset — three arms, one protocol,
+five seeds, evaluated once on held-out test. On the common 56-video subset every arm can score:
+
+| Arm | Input | Accuracy | ROC-AUC | F1 |
+| --- | --- | --- | --- | --- |
+| `baseline` | embeddings (768) | 0.786 [0.732, 0.821] | 0.891 [0.880, 0.902] | 0.794 |
+| `dtw` | DTW features (16) | 0.643 [0.589, 0.696] | 0.690 [0.680, 0.699] | 0.664 |
+| `fusion` | both (784) | 0.811 [0.786, 0.839] | 0.895 [0.881, 0.906] | 0.818 |
+
+Two findings. **DTW features alone are weakly but genuinely predictive**: ROC-AUC 0.690, every
+seed well above chance. This qualifies the conclusion of Sections 17–19.2 — the features are
+not noise, even though the median path offset is a bad delay estimator. **Adding them to the
+baseline does not reliably help**: mean accuracy +2.5 points, but the seed ranges overlap, one
+seed is negative, and ROC-AUC gains +0.003 with fusion ahead in only 2 of 5 seeds. At 56 test
+videos one video is worth 1.8 accuracy points, so this difference is within noise.
+
+Fusion trades error types — recall 0.786 → 0.893, FPR 0.214 → 0.357 — which is threshold
+placement, not improved discrimination.
+
+A fourth reason for the weak result joins the three in 19.2: **LAV-DF manipulations are
+localised**, often a short edited segment, while these features are whole-clip summaries that
+can wash out a two-second edit. And a manipulated clip can stay perfectly lip-synced, in which
+case no timing feature can help by construction.
+
+Full protocol, per-seed deltas and limitations: [DTW classifier evaluation](dtw-classifier-evaluation.md).
+
+### 19.3 Why the ablation was gated, and what that gate was worth
+
+The pre-registered plan ([experimental design](experimental-design.md)) gated the arm A versus
+arm B ablation on first validating the timing signals. That gate was never passed, and the
+ablation in 19.2a confirms why the caution was justified rather than excessive: the fusion arm's
++2.5-point mean accuracy would have been reportable as an improvement had we run it without
+seeds, and five seeds show it is noise. The gate did its job — it stopped a single favourable
+run being mistaken for a result.
 
 ### 19.4 What the evidence does and does not support
 
 **Supported:** the baseline detects LAV-DF manipulations in this small sample well above chance;
 the DTW implementation is correct as software; on this recording the selected DTW path statistic
 is a poor delay estimator, clearly worse than cross-correlation; the chosen scalar signals do
-not behave like two views of one timing process.
+not behave like two views of one timing process; the DTW feature vector nevertheless carries
+weak deepfake signal (ROC-AUC 0.690) while adding no reliable gain over the embedding baseline.
 
 **Not supported, and not claimed:** that DTW cannot contribute to deepfake detection in general;
 that cross-correlation is a good synchronisation estimator in absolute terms (Experiment 2 says
@@ -938,7 +968,8 @@ biometric processing. **Not used in this project** for that reason.
 | Document | Contents |
 | --- | --- |
 | [README](../README.md) | Project overview, status, setup |
-| [DTW research validation](dtw-research-validation.md) | Full experimental protocols, per-case data, V2 protocol |
+| [DTW classifier evaluation](dtw-classifier-evaluation.md) | The baseline / DTW / fusion ablation on real data |
+| [DTW research validation](dtw-research-validation.md) | Timing protocols, per-case data, V2 protocol |
 | [System architecture](system-architecture.md) | Component-by-component build status |
 | [Experimental design](experimental-design.md) | Pre-registered plan and execution status |
 | [Research feasibility](research-feasibility.md) | Encoder/dataset licensing review |

@@ -12,12 +12,21 @@ The project has two deliberately separate parts:
    between audio energy and lip aperture. DTW is the project's research motivation, but it is
    **not an input to the classifier**, and it has **not** been shown to improve detection.
 
-> **Headline honest finding.** We have no evidence that DTW improves deepfake classification
-> accuracy. In the controlled experiments run so far, the selected DTW path statistic performed
-> *worse* than simple cross-correlation at recovering known timing shifts. These negative
-> results are reported in full below and in
-> [controlled DTW research validation](docs/dtw-research-validation.md). They are not concealed,
-> and nothing in this repository should be read as a demonstration that DTW detects deepfakes.
+> **Headline honest finding.** DTW timing features are now a trained input to the classifier,
+> and the ablation has been run on the real LAV-DF subset. Two measured results:
+>
+> - **DTW features alone are weakly predictive** — ROC-AUC **0.690** across five seeds, every
+>   seed well above chance. The timing signal is real, but far below the embedding baseline
+>   (0.891).
+> - **Adding DTW to the baseline does not reliably improve it** — mean accuracy +2.5 points,
+>   but seed ranges overlap, one seed is negative, and ROC-AUC gains +0.003 with fusion ahead
+>   in only **2 of 5 seeds**. With 56 test videos one video is 1.8 points, so this is noise.
+>
+> So DTW *participates* in the prediction and is *not useless* — but "DTW improves deepfake
+> detection" is **not supported**. Full numbers, protocol and limitations:
+> [DTW classifier evaluation](docs/dtw-classifier-evaluation.md). The earlier timing-estimation
+> experiments, which were also negative, are in
+> [controlled DTW research validation](docs/dtw-research-validation.md).
 
 Research outputs are not identity verification, not calibrated probabilities, and not a basis
 for any decision about a person.
@@ -34,7 +43,10 @@ for any decision about a person.
 | Local API + React research frontend | **Implemented, browser-verified** | [local application](docs/local-app-demonstration.md) |
 | Constrained DTW algorithm | **Implemented and tested** | [DTW validation](docs/dtw-research-validation.md) |
 | DTW timing-response experiments | **Executed — negative results** | [results](#dtw-research-results-negative) |
-| DTW improves detection accuracy | **Not demonstrated** | no ablation has been run |
+| Genuine end-to-end inference with DTW | **Verified in Chromium** | held-out fake 0.885, genuine 0.437 |
+| DTW as a trained classifier input | **Implemented** | [evaluation](docs/dtw-classifier-evaluation.md) |
+| DTW-vs-no-DTW ablation | **Run** (3 arms, 5 seeds) | [evaluation](docs/dtw-classifier-evaluation.md) |
+| DTW improves detection accuracy | **Not supported** | +0.003 ROC-AUC, 2/5 seeds |
 | Identity-disjoint evaluation | **Not verified** | source-group splitting only |
 | Score calibration | **Not done** | scores are uncalibrated sigmoids |
 | Public deployment | **Out of scope / not permitted** | [limitations](#limitations) |
@@ -176,6 +188,26 @@ is uncalibrated and is not a probability. A 33.33 % false-positive rate means on
 genuine videos in this sample was labelled fake. None of this establishes real-world
 performance.
 
+### DTW as a classifier input — the ablation
+
+Three arms, one protocol, differing only in input. Trained on train, selected and thresholded on
+validation, evaluated **once** on held-out test. Five seeds; mean [min, max] on the common
+56-video subset every arm can score:
+
+| Arm | Input | Accuracy | ROC-AUC | F1 |
+| --- | --- | --- | --- | --- |
+| `baseline` | embeddings (768) | 0.786 [0.732, 0.821] | 0.891 [0.880, 0.902] | 0.794 |
+| `dtw` | DTW features (16) | 0.643 [0.589, 0.696] | 0.690 [0.680, 0.699] | 0.664 |
+| `fusion` | both (784) | 0.811 [0.786, 0.839] | 0.895 [0.881, 0.906] | 0.818 |
+
+Fusion minus baseline ROC-AUC per seed: +0.018, −0.006, +0.024, −0.013, −0.006 — **2 of 5
+positive**. Fusion does shift the operating point (recall 0.786 → 0.893, FPR 0.214 → 0.357),
+but that is threshold placement, not better discrimination.
+
+5 of 180 clips (2.8 %) have no timing features because the face track fails; they are excluded
+from the common subset and counted, not hidden. Full protocol and caveats:
+[DTW classifier evaluation](docs/dtw-classifier-evaluation.md).
+
 ### DTW research results (negative)
 
 **Experiment 1 — controlled timestamp-shift response**, one consented 12-second clip, audio
@@ -223,8 +255,9 @@ Full methodology, per-shift rows, rejection accounting and the V2 protocol are i
 
 ## Limitations
 
-- **No demonstrated DTW benefit.** The central research question remains open. No
-  DTW-versus-no-DTW ablation has been run.
+- **No demonstrated DTW benefit.** The ablation has now been run: DTW features are weakly
+  predictive on their own, but adding them to the baseline gives no reliable gain (+0.003
+  ROC-AUC, 2/5 seeds). The central question is answered for this dataset, negatively.
 - **Small evaluation.** 60 held-out videos, one recorded run, no repeated seeds, no
   confidence intervals.
 - **Identity-disjointness unverified.** Splits group by provider source group only.
@@ -303,7 +336,8 @@ outside the checkout is the real protection.
 | Document | What it covers |
 | --- | --- |
 | [System architecture](docs/system-architecture.md) | The system as actually built, component by component |
-| [Controlled DTW research validation](docs/dtw-research-validation.md) | DTW methodology, all experiments, negative results, V2 protocol |
+| [DTW classifier evaluation](docs/dtw-classifier-evaluation.md) | The baseline / DTW / fusion ablation on real LAV-DF data |
+| [Controlled DTW research validation](docs/dtw-research-validation.md) | DTW methodology, timing experiments, negative results, V2 protocol |
 | [Research report](docs/research-report.md) | Full academic report: methodology, mathematics, results, analysis |
 | [Demonstration script](docs/demonstration-script.md) | 10–12 minute faculty walkthrough, with the questions to expect |
 | [Local research inference](docs/local-inference.md) | Recorded experiment, checkpoint transfer, CLI usage |
