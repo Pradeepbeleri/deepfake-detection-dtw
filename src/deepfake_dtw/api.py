@@ -32,6 +32,11 @@ def _run_inference(upload, cfg, work_dir):
                '--visual-sha256', cfg['visual_sha256'], '--dinov2-source', cfg['dinov2_source'],
                '--classifier-checkpoint', cfg['classifier_checkpoint'], '--classifier-sha256', cfg['classifier_sha256'],
                '--device', cfg['device'], '--authorized-models', '--dtw']
+    # When a trained temporal model is configured, DTW features take part in the
+    # reported prediction. Without it the V1 classifier decides, unchanged.
+    if cfg.get('temporal_checkpoint') and cfg.get('temporal_sha256'):
+        command += ['--temporal-checkpoint', cfg['temporal_checkpoint'],
+                    '--temporal-sha256', cfg['temporal_sha256']]
     secret_names = {'DEEPFAKE_API_TOKEN', 'HF_TOKEN', 'HUGGING_FACE_HUB_TOKEN', 'GOOGLE_APPLICATION_CREDENTIALS'}
     environment = {key: value for key, value in os.environ.items()
                    if key not in secret_names and not key.startswith(('GH_', 'GITHUB_', 'AWS_', 'AZURE_'))}
@@ -72,6 +77,8 @@ def create_app(config=None):
         'dinov2_source': os.environ.get('DEEPFAKE_DINOV2_SOURCE', ''),
         'classifier_checkpoint': os.environ.get('DEEPFAKE_CLASSIFIER_CHECKPOINT', ''),
         'classifier_sha256': os.environ.get('DEEPFAKE_CLASSIFIER_SHA256', ''),
+        'temporal_checkpoint': os.environ.get('DEEPFAKE_TEMPORAL_CHECKPOINT', ''),
+        'temporal_sha256': os.environ.get('DEEPFAKE_TEMPORAL_SHA256', ''),
         'authorized': os.environ.get('DEEPFAKE_AUTHORIZED_MODELS') == '1',
         'device': os.environ.get('DEEPFAKE_DEVICE', 'cpu'),
     })
@@ -190,6 +197,7 @@ def create_app(config=None):
     @app.get('/health')
     def health():
         return {'service': 'available', 'model': 'configured_unverified' if ready() else 'unavailable',
+                'dtw_in_prediction': bool(cfg.get('temporal_checkpoint') and cfg.get('temporal_sha256')),
                 'note': 'Local research only; model configuration is not proof of readiness or evaluation.'}
 
     @app.post('/jobs', status_code=202)

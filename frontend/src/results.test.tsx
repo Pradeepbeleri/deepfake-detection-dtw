@@ -71,3 +71,26 @@ describe('DTW feature display and prediction provenance', () => {
     expect(html).not.toContain('>0.000<');
   });
 });
+
+describe('timing disclaimer matches whether DTW was actually used', () => {
+  const base: Analysis = { classification: { classification:'real', score:.1, threshold:.5,
+    score_kind:'uncalibrated sigmoid', warning:'w' },
+    timing: { status:'experimental_unvalidated', audio_times_seconds:[0,1], video_times_seconds:[0,.9],
+      median_video_minus_audio_seconds:-.1, normalized_cost:.4, caveat:'c' }, warning:'r' };
+
+  it('says DTW is unused only when it is unused', () => {
+    const html = renderToStaticMarkup(<ResultDetails result={{...base,
+      classification:{...base.classification, prediction_source:'baseline_v1_embeddings',
+        dtw_used_for_prediction:false}}}/>);
+    expect(html).toContain('DTW is not used by the classifier');
+  });
+
+  it('never claims DTW is unused when it drove the prediction', () => {
+    const html = renderToStaticMarkup(<ResultDetails result={{...base,
+      classification:{...base.classification, prediction_source:'temporal_fusion', mode:'fusion',
+        dtw_used_for_prediction:true}}}/>);
+    expect(html).not.toContain('DTW is not used by the classifier');
+    expect(html).toContain('inputs to the temporal model');
+    expect(html).toContain('within run-to-run noise');
+  });
+});
