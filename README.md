@@ -279,6 +279,19 @@ classifier). Step-by-step instructions, environment variables and the exact run 
 [local research application](docs/local-app-demonstration.md) and
 [local research inference](docs/local-inference.md).
 
+### Preparing a clip for a demonstration
+
+The pipeline accepts MP4 only, with exactly one audio and one video stream, ≤30 s, ≤100 MB,
+≤1920×1080, and ≥80 % single-face mouth detection. To reshape another file into that envelope
+and check the face track before submitting it:
+
+```bash
+.venv/bin/python scripts/prepare_demo_clip.py INPUT.mov OUTPUT.mp4 --start 5 --duration 12
+```
+
+This is a convenience for demonstrations. It does not extend what the detector supports:
+audio-only and silent inputs remain impossible, because the model requires both modalities.
+
 Never commit model checkpoints, private videos, dataset archives, extracted features, private
 experiment reports, or tokens. `.gitignore` covers the common cases, but keeping these files
 outside the checkout is the real protection.

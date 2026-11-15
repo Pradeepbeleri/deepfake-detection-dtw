@@ -26,6 +26,27 @@ large. Stage everything beforehand.
 6. Do a full dry run. Note the actual wall-clock time of one analysis on the demo machine so
    you can say "this takes about N seconds" rather than watching silence.
 
+### If someone hands you their own video
+
+The pipeline accepts only MP4, with **one** audio and **one** video stream, at most 30 s,
+100 MB and 1920×1080, and needs ≥80 % single-face mouth detection. An arbitrary file will
+usually fail one of those. Reshape it first, and find out *before* you submit:
+
+```bash
+.venv/bin/python scripts/prepare_demo_clip.py THEIR_FILE.mov /tmp/demo-clip.mp4 --start 5 --duration 12
+```
+
+It converts the container, trims, downscales if needed, then runs the real face track and
+prints `READY for the demo` or the reason it would be rejected. It never runs the classifier.
+
+Two things it cannot fix, and you should say so plainly:
+
+- **Audio-only input is impossible here** — the model has an audio branch *and* a visual
+  branch, and needs both. A silent video is equally impossible.
+- **An arbitrary clip is outside the training distribution.** The model will print a score,
+  but the measured 76.67 % applies to the LAV-DF test set only. Say: *"it will give a number,
+  but I can't claim that number is reliable for a video unlike my training data."*
+
 **Have a fallback.** If the service fails live, show the recorded run documented in
 [local application](local-app-demonstration.md#observed-verification) and **say explicitly that
 it is a recorded result**, never that it is live.
