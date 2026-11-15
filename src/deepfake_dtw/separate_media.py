@@ -50,7 +50,11 @@ def probe_pair(video, audio, audio_offset_seconds):
         _run(['ffmpeg', '-v', 'error', '-protocol_whitelist', 'file,pipe', '-i', str(video),
               '-protocol_whitelist', 'file,pipe', '-i', str(audio), '-filter_complex',
               f'[0:v:0]setpts=PTS-STARTPTS+{vstart:.6f}/TB[v];[1:a:0]asetpts=PTS-STARTPTS+{astart:.6f}/TB[a]',
-              '-map', '[v]', '-map', '[a]', '-c:v', 'mpeg4', '-c:a', 'aac', '-threads', '1', '-y', str(combined)])
+              # Without -copyts some FFmpeg builds (observed on 6.1.1) renormalize the
+              # muxed streams to zero, silently discarding a declared negative offset.
+              # Both shifts are nonnegative by construction, so no timestamp goes below zero.
+              '-map', '[v]', '-map', '[a]', '-c:v', 'mpeg4', '-c:a', 'aac', '-threads', '1',
+              '-copyts', '-y', str(combined)])
         _, _, metadata = read_mp4(combined)
         from .analyze import _timing
         try:
