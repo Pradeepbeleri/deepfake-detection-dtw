@@ -2,6 +2,26 @@
 
 Checked 7 November 2026. **Verified** means an accessible source was inspected; **proposed** means a project decision; **unresolved** means it requires further evidence or permission. These notes are not legal advice.
 
+> **Outcome of this review (15 November 2026).** The decisions below were resolved as follows:
+>
+> - **AV-HuBERT is not used.** Its non-commercial, biometric-processing and surveillance
+>   restrictions were not cleared, so the project built an independent baseline instead. Nothing
+>   in this repository is a reproduction of AV-Lip-Sync+, and its authors' reported results are
+>   not ours.
+> - **The visual encoder is DINOv2 ViT-S/14, not ResNet-18.** The ResNet-18 option below was the
+>   earlier fallback candidate; its ImageNet-derived weight terms were never confirmed for this
+>   use. The ordinary DINOv2 code and backbone weights are stated upstream as Apache 2.0.
+>   DINOv2 is a general visual encoder and is **not** an audio-lip synchronization model.
+> - **The audio encoder is Whisper `tiny.en`** (code and weights MIT upstream), loaded only from
+>   a local checkpoint matching the official SHA-256.
+> - **Still unresolved.** LAV-DF provider terms and the underlying VoxCeleb2 conditions as they
+>   apply to the trained checkpoint and any derived artifact; whether this use constitutes
+>   biometric processing under applicable institutional policy; and any public distribution or
+>   deployment, which remains out of scope.
+>
+> The paper itself was never retrievable from this environment, so every statement about it in
+> this document remains secondary evidence.
+
 ## Paper and implementation
 
 The project identifies DOI [10.1109/THMS.2025.3618409](https://doi.org/10.1109/THMS.2025.3618409) and [arXiv 2311.02733](https://arxiv.org/abs/2311.02733). Both hosts and Crossref were blocked by this environment's network policy, so their linkage, publication metadata, final text and version differences could not be independently checked. An independently hosted [2023 arXiv announcement archive](https://github.com/LeeKyungwook/get-arxiv-noti/issues/834) reproduces the abstract and lists the title **AV-Lip-Sync+: Leveraging AV-HuBERT to Exploit Multimodal Inconsistency for Video Deepfake Detection**, by Sahibzada Adil Shahzad, Ammarah Hashmi, Yan-Tsung Peng, Yu Tsao and Hsin-Min Wang. This is secondary evidence, not the paper itself.

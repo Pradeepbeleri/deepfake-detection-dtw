@@ -87,8 +87,12 @@ def test_face_missing_multiple_and_gap():
 
 def test_audio_leads_video_and_long_occlusion(tmp_path):
     path = tmp_path / 'audio-first.mp4'
-    ffmpeg('-itsoffset', '0.2', '-f', 'lavfi', '-i', 'testsrc2=size=64x64:rate=25:duration=1', '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=16000:duration=1', '-c:v', 'mpeg4', '-c:a', 'aac', str(path))
+    # -copyts keeps the input offset in the muxed output; without it some FFmpeg
+    # builds (observed on 6.1.1) renormalize both streams to zero and the fixture
+    # silently stops exercising an audio-leading clip.
+    ffmpeg('-itsoffset', '0.2', '-f', 'lavfi', '-i', 'testsrc2=size=64x64:rate=25:duration=1', '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=16000:duration=1', '-c:v', 'mpeg4', '-c:a', 'aac', '-copyts', str(path))
     audio, _, meta = read_mp4(path)
+    assert meta['audio_minus_video_seconds'] == pytest.approx(-0.2, abs=.05)
     assert meta['audio_minus_video_seconds'] < 0
     assert meta['audio_minus_video_seconds'] == pytest.approx(audio.timestamps[0].item() - meta['first_video_pts_seconds'])
     video = prepare_video(np.zeros((6, 16, 16, 3), dtype=np.uint8), np.arange(6) / 25)
