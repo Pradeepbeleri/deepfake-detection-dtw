@@ -1,4 +1,23 @@
-# Experimental design (proposal; preregister before running)
+# Experimental design
+
+> **Execution status (15 November 2026).** This document is the preregistered plan. Parts of it
+> have now been executed, and parts have not:
+>
+> - **Executed.** A baseline classifier (arm A) was trained and evaluated once on a 60-video
+>   held-out LAV-DF partition. The visual branch is **DINOv2 ViT-S/14**, not the ResNet-18
+>   fallback this document originally assumed. Synthetic alignment tests, controlled
+>   timestamp-shift experiments and physical ±3 s playback-shift experiments were all run.
+> - **Not executed.** Arm B does not exist: **no DTW-augmented model has been trained and no
+>   A-versus-B ablation has been run.** No calibration partition, no paired bootstrap
+>   intervals, no multi-seed repetition, no identity-disjoint evaluation, no cross-dataset test.
+> - **Result so far.** The alignment-validation step below has not been passed. Cross-correlation
+>   outperformed the DTW path statistic on controlled shifts, and both performed poorly on
+>   physical multi-second delays. See
+>   [DTW research validation](dtw-research-validation.md). Under the logic of this very
+>   document, that blocks the ablation rather than licensing it.
+>
+> The remainder is the plan as written. Where it says "the preferred fallback uses Whisper tiny
+> and a separately trained visual encoder", read DINOv2 ViT-S/14 as the encoder actually used.
 
 ## Question and comparisons
 

@@ -16,9 +16,27 @@ Each milestone ends with reviewable evidence and must respect license/data acces
 8. **Frontend:** responsive React/TypeScript design system and actual API integration.
 9. **End-to-end:** functional, accessibility, privacy/security and deployment tests; demonstrate only supported behavior.
 
-Milestone 2B synthetic extraction is implemented; pretrained extraction and Milestones 3–9 remain unverified or unimplemented. Expensive training may use Colab; availability and runtime compatibility must be tested, not assumed.
+**Milestone outcomes (15 November 2026).** Milestones 1–4 (foundation, encoder feasibility and
+smoke test, preprocessing, baseline) are complete, with the visual encoder resolved as DINOv2
+ViT-S/14 rather than ResNet-18. Milestone 5 (DTW) is **partially complete**: the constrained
+algorithm, synthetic offset tests and controlled real-media delay experiments are done, but the
+"validated comparable features" precondition has **not** been met and the fusion ablation was
+therefore never run. Milestone 6 (locked paired evaluations, uncertainty, calibration) is not
+done. Milestones 7 and 8 (API, frontend) are complete for local research use. Milestone 9 is
+partial: functional and responsive checks pass and a browser end-to-end run succeeded against
+private checkpoints, but independent accessibility, privacy/security and deployment review have
+not been performed, and deployment is out of scope. Training used Colab; its GPU availability
+and runtime compatibility were tested rather than assumed.
 
-## Demonstration status (7 November 2026)
+## Demonstration status
+
+> **Superseded.** The table below records the status on **7 November 2026**, before the
+> classifier, API and frontend were built. It is kept for history. For the current status see
+> the [README](../README.md#current-status-at-a-glance) and
+> [system architecture](system-architecture.md); the dated entries further down this document
+> and in the [implementation history](implementation-history.md) record what happened next.
+
+### Status on 7 November 2026 (historical)
 
 | Area | Status and evidence | Remaining work |
 | --- | --- | --- |
@@ -29,7 +47,26 @@ Milestone 2B synthetic extraction is implemented; pretrained extraction and Mile
 | API and interface | Proposed only | Implement real inference, unavailable/error states and accessible premium interface |
 | Live offline demonstration | Not available | Package approved model and assets in advance, test CPU fallback against resource/latency limits; separately label any recorded fallback as recorded, never live inference |
 
-The priority is a reproducible end-to-end detector with measured limitations; no classifier, score, frontend, or live inference demonstration exists yet. GPU and network failure procedures must be tested with actual artifacts before the faculty demonstration.
+That was the position on 7 November 2026. It no longer holds: a classifier was trained and
+evaluated once on a 60-video held-out partition, and a local API and frontend now run genuine
+inference in the browser against private checkpoints. See the
+[README](../README.md#research-results) for the recorded metrics and the
+[local research application](local-app-demonstration.md) for the verified browser run.
+
+### Current status (15 November 2026)
+
+| Area | Status | Remaining work |
+| --- | --- | --- |
+| Research and licensing | AV-HuBERT avoided; Whisper MIT, DINOv2 Apache 2.0 reviewed | Confirm LAV-DF / VoxCeleb2 derived-artifact rights with the institution |
+| Preprocessing and feature extraction | Implemented; run on real consented media | Broader face-coverage evaluation across speakers |
+| Detector | Trained; one recorded held-out evaluation (76.67 % accuracy, ROC-AUC 0.8256) | Identity-disjoint splits, calibration, repeated seeds, larger test set |
+| DTW | Algorithm, controlled shift and physical-delay experiments implemented and executed | **Negative results so far**; no classifier ablation has been run |
+| Evaluation clips | 60 held-out LAV-DF videos recorded; one consented clip for timing work | Permission-cleared multi-speaker timing corpus with known ground-truth sync |
+| API and interface | Implemented; loopback-only, browser-verified with real checkpoints | Security and accessibility audit before any wider use |
+| Live demonstration | Reproducible locally with private checkpoints | Keep checkpoints staged in advance; no public deployment |
+
+The priority for any continuation is a defensible DTW-versus-no-DTW comparison on
+permission-cleared, identity-aware data — not further tuning of the existing classifier.
 
 ### 2B validation record
 
