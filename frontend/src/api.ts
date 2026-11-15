@@ -1,5 +1,6 @@
 export type Health = { service: string; model: 'unavailable' | 'configured_unverified'; note: string };
-export type Analysis = { classification: { classification: 'real' | 'fake'; score: number; threshold: number; score_kind: string; warning: string }; timing: { status: string; audio_times_seconds?: number[]; video_times_seconds?: number[]; median_video_minus_audio_seconds?: number; normalized_cost?: number; reason?: string; caveat?: string; signals?: {audio_times_seconds: number[]; audio_rms: number[]; video_times_seconds: number[]; lip_aperture: number[]}; cross_correlation?: {status: string; offset_seconds?: number; correlation?: number; search_boundary?: boolean} }; warning: string };
+export type DtwFeatures = Record<string, number | null>;
+export type Analysis = { classification: { classification: 'real' | 'fake'; score: number; threshold: number; score_kind: string; warning: string; prediction_source?: string; baseline_v1_score?: number; mode?: string; dtw_used_for_prediction?: boolean }; temporal_model?: { status: string; mode?: string; reason?: string }; timing: { status: string; dtw_features?: DtwFeatures; audio_times_seconds?: number[]; video_times_seconds?: number[]; median_video_minus_audio_seconds?: number; normalized_cost?: number; reason?: string; caveat?: string; signals?: {audio_times_seconds: number[]; audio_rms: number[]; video_times_seconds: number[]; lip_aperture: number[]}; cross_correlation?: {status: string; offset_seconds?: number; correlation?: number; search_boundary?: boolean} }; warning: string };
 export type Job = { status: 'queued' | 'processing' | 'interrupted' | 'failed' | 'completed_research_only'; error?: string; result?: Analysis };
 
 export function validateFile(file: Pick<File, 'name' | 'size'>): string | null {
@@ -42,6 +43,13 @@ export async function getJob(id: string, token: string, signal?: AbortSignal): P
       }
     }
     if (timing.cross_correlation?.status === 'experimental_unvalidated' && (!Number.isFinite(timing.cross_correlation.offset_seconds) || !Number.isFinite(timing.cross_correlation.correlation))) throw new Error('The service returned an invalid correlation result.');
+    if (timing.dtw_features !== undefined && timing.dtw_features !== null) {
+      const f = timing.dtw_features;
+      if (typeof f !== 'object' || Array.isArray(f)) throw new Error('The service returned invalid DTW features.');
+      const entries = Object.entries(f);
+      if (!entries.length || entries.length > 64) throw new Error('The service returned invalid DTW features.');
+      for (const [, v] of entries) if (v !== null && !Number.isFinite(v)) throw new Error('The service returned invalid DTW features.');
+    }
   }
   return value as Job;
 }

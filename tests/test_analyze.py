@@ -155,8 +155,48 @@ def test_optional_dtw_cannot_change_classification(tmp_path,monkeypatch):
     monkeypatch.setattr(module,'_predict',lambda *a:expected.copy())
     monkeypatch.setattr(module,'_timing',lambda _: (_ for _ in ()).throw(ValueError('insufficient face quality')))
     result=module.analyze(str(video),**kwargs,include_timing=True)
-    assert result['classification']==expected
+    # With no temporal model configured the V1 verdict must stand untouched and
+    # timing must stay out of it. The only addition is the provenance label that
+    # tells the interface which model actually decided.
+    for key, value in expected.items():
+        assert result['classification'][key] == value
+    assert result['classification']['prediction_source'] == 'baseline_v1_embeddings'
+    assert result['temporal_model']['status'] == 'not_configured'
     assert result['timing']['status']=='unavailable' and result['timing']['used_for_prediction'] is False
+
+
+def test_configured_temporal_model_produces_the_prediction(tmp_path, monkeypatch):
+    """With a trained DTW/fusion head configured, DTW does drive the verdict."""
+    import deepfake_dtw.analyze as module
+    video, kwargs, _ = inference_fixture(tmp_path)
+    monkeypatch.setattr(module, '_preflight', lambda **_: object())
+    monkeypatch.setattr(module, '_extract', lambda *a, **k: {'status': 'features_extracted'})
+    monkeypatch.setattr(module, '_predict', lambda *a: {
+        'classification': 'real', 'score': 0.2, 'score_kind': 'uncalibrated sigmoid',
+        'dtw_used_for_prediction': False})
+    monkeypatch.setattr(module, '_timing', lambda _: {
+        'status': 'experimental_unvalidated', 'used_for_prediction': False,
+        '_dtw_values': {'x': 1.0}, 'dtw_features': {'x': 1.0}})
+
+    import deepfake_dtw.dtw_classifier as dc
+    monkeypatch.setattr(dc, 'load_temporal_classifier',
+                        lambda *a, **k: {'mode': 'dtw', 'threshold': .5})
+    monkeypatch.setattr(dc, 'predict_temporal', lambda head, dtw_values=None, embedding=None: {
+        'classification': 'fake', 'score': 0.9, 'threshold': .5, 'mode': 'dtw',
+        'score_kind': 'uncalibrated sigmoid', 'dtw_used_for_prediction': True})
+
+    result = module.analyze(str(video), **kwargs, include_timing=True,
+                            temporal_checkpoint='/tmp/fake.pt', temporal_sha256='a' * 64)
+    assert result['classification']['classification'] == 'fake'
+    assert result['classification']['score'] == 0.9
+    assert result['classification']['dtw_used_for_prediction'] is True
+    assert result['classification']['prediction_source'] == 'temporal_dtw'
+    # The superseded V1 score is retained so the comparison stays visible.
+    assert result['classification']['baseline_v1_score'] == 0.2
+    assert result['timing']['used_for_prediction'] is True
+    assert result['temporal_model']['status'] == 'ok'
+    # The internal handle must never leak into the serialised result.
+    assert '_dtw_values' not in result['timing']
 
 
 def test_nonfinite_classifier_weights_are_rejected(tmp_path):
