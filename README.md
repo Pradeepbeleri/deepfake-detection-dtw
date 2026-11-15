@@ -18,12 +18,14 @@ The project has two deliberately separate parts:
 > - **DTW features alone are weakly predictive** — ROC-AUC **0.690** across five seeds, every
 >   seed well above chance. The timing signal is real, but far below the embedding baseline
 >   (0.891).
-> - **Adding DTW to the baseline does not reliably improve it** — mean accuracy +2.5 points,
->   but seed ranges overlap, one seed is negative, and ROC-AUC gains +0.003 with fusion ahead
->   in only **2 of 5 seeds**. With 56 test videos one video is 1.8 points, so this is noise.
+> - **Adding DTW to the baseline helps a little, consistently, but not provably.** After
+>   regularisation tuned on validation (equal budget for every arm), fusion reaches ROC-AUC
+>   **0.9008** against the baseline's **0.8913** and is ahead in **5 of 5 seeds** — but that is
+>   +0.009 AUC and +1.4 accuracy points on 56 test videos, where the confidence interval spans
+>   roughly ±10 points. Seed consistency is optimisation stability, not statistical evidence.
 >
-> So DTW *participates* in the prediction and is *not useless* — but "DTW improves deepfake
-> detection" is **not supported**. Full numbers, protocol and limitations:
+> So DTW *participates* in the prediction and does appear to add a little — but "DTW improves
+> deepfake detection" remains **not established**. Full numbers, protocol and limitations:
 > [DTW classifier evaluation](docs/dtw-classifier-evaluation.md). The earlier timing-estimation
 > experiments, which were also negative, are in
 > [controlled DTW research validation](docs/dtw-research-validation.md).
@@ -46,7 +48,7 @@ for any decision about a person.
 | Genuine end-to-end inference with DTW | **Verified in Chromium** | held-out fake 0.885, genuine 0.437 |
 | DTW as a trained classifier input | **Implemented** | [evaluation](docs/dtw-classifier-evaluation.md) |
 | DTW-vs-no-DTW ablation | **Run** (3 arms, 5 seeds) | [evaluation](docs/dtw-classifier-evaluation.md) |
-| DTW improves detection accuracy | **Not supported** | +0.003 ROC-AUC, 2/5 seeds |
+| DTW improves detection accuracy | **Small, not established** | +0.009 ROC-AUC, 5/5 seeds, n=56 |
 | Identity-disjoint evaluation | **Not verified** | source-group splitting only |
 | Score calibration | **Not done** | scores are uncalibrated sigmoids |
 | Public deployment | **Out of scope / not permitted** | [limitations](#limitations) |

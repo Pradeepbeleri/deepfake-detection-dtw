@@ -320,7 +320,10 @@ def cmd_compare(args):
               'dtw_signal_source': cache.get('signal_source', 'video'),
               'video_binding_verified': all(i.get('video_binding_verified')
                                             for v in buckets.values() for i in v),
-              'feature_names': list(FEATURE_NAMES), 'seed': args.seed, 'arms': {}}
+              'feature_names': list(FEATURE_NAMES), 'seed': args.seed,
+              'hyperparameters': {'hidden': args.hidden, 'epochs': args.epochs,
+                                  'weight_decay': args.weight_decay},
+              'arms': {}}
     # Arms that need DTW features cannot score a clip whose face track failed.
     # Comparing an arm on 60 videos with another on 56 is not like-for-like, so
     # the headline comparison is run on the intersection every arm can score.
@@ -333,7 +336,8 @@ def cmd_compare(args):
     for mode in MODES:
         print(f'=== training arm: {mode} ===', flush=True)
         arm = train_arm(buckets['train'], buckets['validation'], cache, mode,
-                        hidden=args.hidden, epochs=args.epochs, seed=args.seed, device=args.device)
+                        hidden=args.hidden, epochs=args.epochs, seed=args.seed,
+                        weight_decay=args.weight_decay, device=args.device)
         test = evaluate_arm(arm, buckets['test'], cache)
         common = evaluate_arm(arm, common_test, cache)
         report['arms'][mode] = {'validation': arm['validation_metrics'],
@@ -465,6 +469,8 @@ def main():
     k.add_argument('--hidden', type=int, default=128)
     k.add_argument('--epochs', type=int, default=200)
     k.add_argument('--seed', type=int, default=42)
+    k.add_argument('--weight-decay', type=float, default=1e-3,
+                   help='L2 regularisation; 0.1 was selected on validation for this dataset')
     k.add_argument('--device', choices=['cpu', 'cuda', 'auto'], default='cpu')
     k.add_argument('--allow-missing-video', action='store_true',
                    help='proceed when local media is absent; records video_binding_verified=false')

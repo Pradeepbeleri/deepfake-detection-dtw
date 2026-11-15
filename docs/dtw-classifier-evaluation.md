@@ -86,6 +86,52 @@ Confusion matrices are `[[TN, FP], [FN, TP]]`.
 
 ---
 
+## 2a. After validation-only hyperparameter tuning
+
+The results above use the default configuration (`hidden=128`, `weight_decay=1e-3`). With 784
+features and 60 training videos the model is heavily overparameterised, so regularisation was
+searched — **on validation only**, with the *same budget given to every arm* so the comparison
+stays fair. 72 configurations over cache source, arm, hidden width, weight decay and epochs,
+three seeds each, selected by mean validation ROC-AUC.
+
+| Arm | Best validation AUC | Selected config |
+| --- | ---: | --- |
+| `baseline` | 0.8204 | hidden 128, wd 0.1 |
+| `fusion` | 0.8289 | hidden 128, wd 0.1, video signals |
+
+Tuning barely moves validation: the top twelve configurations sit within 0.005 AUC of each
+other and `epochs=200` and `epochs=600` give identical results. **The ceiling is set by 60
+training videos, not by hyperparameters.** The encoder-novelty signal source
+(`--source features`, 178/180 clips computed) tied the RMS/aperture source at 0.8274.
+
+Evaluating the two tuned winners on the common 56-video test subset, five seeds:
+
+| Arm | Accuracy | ROC-AUC | F1 |
+| --- | --- | --- | --- |
+| `baseline` (tuned) | 0.8143 [0.786, 0.821] | 0.8913 [0.884, 0.897] | 0.8260 |
+| `fusion` (tuned) | **0.8286** [0.804, 0.839] | **0.9008** [0.894, 0.906] | **0.8389** |
+
+Fusion minus baseline ROC-AUC per seed: +0.0128, +0.0051, +0.0217, +0.0051, +0.0026 —
+**ahead in 5 of 5 seeds**, mean +0.0094.
+
+**What changed, and what did not.** With proper regularisation the fusion advantage becomes
+*consistent* (5/5 seeds rather than 2/5). It does not become *large*: +0.009 ROC-AUC and +1.4
+accuracy points. Consistency across random seeds measures optimisation stability on one fixed
+split; it says nothing about sampling uncertainty. With 56 test videos the confidence interval
+on accuracy spans roughly ±10 points, which dwarfs a 1.4-point difference.
+
+**Honest reading: adding DTW features gives a small, consistent, and statistically
+unestablished improvement.** It is more than the earlier default-configuration run suggested,
+and much less than "DTW improves deepfake detection".
+
+> **Test-set discipline.** The held-out partition has now been read **twice**: once for the
+> default-configuration ablation in section 2, and once for the tuned winners here. All
+> configuration selection happened on validation. Two reads is two more than ideal and is
+> recorded so the next person does not treat this partition as fresh.
+
+The deployable checkpoint is the tuned fusion arm at seed 42, which scores **46/56 (82.1%)** on
+held-out test: 8 genuine videos flagged fake, 2 fakes missed.
+
 ## 3. What these numbers mean
 
 **DTW timing features are weakly but genuinely predictive.** ROC-AUC 0.690 (range 0.680–0.699
@@ -158,8 +204,11 @@ Requires the private LAV-DF features, media and manifest; none is in this reposi
 ```
 
 ```bash
-.venv/bin/python -m deepfake_dtw.dtw_classifier compare MANIFEST.json /private/dtw-cache.json /private/ablation.json --save-model fusion
+.venv/bin/python -m deepfake_dtw.dtw_classifier compare MANIFEST.json /private/dtw-cache.json /private/ablation.json --hidden 128 --epochs 200 --weight-decay 0.1 --seed 42 --save-model fusion
 ```
+
+`--weight-decay 0.1` is the value selected on validation for this dataset; the default of
+1e-3 underfits the regularisation this sample size needs.
 
 `--source features` substitutes encoder-novelty curves for RMS/aperture and needs no media.
 `--seed N` repeats the run. The report refuses to overwrite an existing file, is written mode
