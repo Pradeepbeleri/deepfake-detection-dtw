@@ -134,13 +134,19 @@ def split(records, seed=42):
     return audit_artifacts(result)
 
 
-def load(path, require_partition=True, feature_partitions=None):
+def load(path, require_partition=True, feature_partitions=None, check_files=True):
+    """Read and validate a manifest.
+
+    `check_files=False` skips the on-disk media checks for a working copy that
+    holds encoder features but not the source MP4s. Callers that do this must
+    report that the feature-to-video binding was not verified.
+    """
     try:
         with open(path, encoding='utf-8') as f:
             records = json.load(f)
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError(f'Cannot read manifest: {exc}') from exc
-    validate(records, require_partition=require_partition)
+    validate(records, require_partition=require_partition, check_files=check_files)
     return audit_artifacts(records, feature_partitions=feature_partitions)
 
 
