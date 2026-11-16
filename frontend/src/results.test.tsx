@@ -94,3 +94,46 @@ describe('timing disclaimer matches whether DTW was actually used', () => {
     expect(html).toContain('within run-to-run noise');
   });
 });
+
+describe('audio/video synchronization panel', () => {
+  const base: Analysis = { classification: { classification:'real', score:.3, threshold:.45,
+    score_kind:'uncalibrated sigmoid', warning:'w' },
+    timing: { status:'experimental_unvalidated', audio_times_seconds:[0,1], video_times_seconds:[0,.9],
+      median_video_minus_audio_seconds:-.04, normalized_cost:.4, caveat:'c' }, warning:'r' };
+  const withSync = (gs: NonNullable<Analysis['timing']['global_sync']>) =>
+    renderToStaticMarkup(<ResultDetails result={{...base, timing:{...base.timing, global_sync: gs}}}/>);
+
+  it('reports a measured offset in milliseconds with the right direction', () => {
+    const html = withSync({status:'experimental', confidence:'measured', offset_seconds:-1.64,
+      correlation:0.455, peak_margin:0.09});
+    expect(html).toContain('Audio is ahead of the picture by 1640 ms');
+    expect(html).toContain('-1.64 s');
+    expect(html).toContain('0.455');
+  });
+
+  it('says picture lags when the offset is positive', () => {
+    const html = withSync({status:'experimental', confidence:'measured', offset_seconds:1.2,
+      correlation:0.5, peak_margin:0.1});
+    expect(html).toContain('behind the picture by 1200 ms');
+  });
+
+  it('calls a near-zero offset in sync rather than inventing a delay', () => {
+    const html = withSync({status:'experimental', confidence:'measured', offset_seconds:-0.04,
+      correlation:0.41, peak_margin:0.08});
+    expect(html).toContain('No significant offset detected');
+  });
+
+  it('refuses to report an offset it cannot measure', () => {
+    const html = withSync({status:'rejected', confidence:'unreliable', offset_seconds:null,
+      correlation:0.22, peak_margin:0.01});
+    expect(html).toContain('Offset could not be determined');
+    expect(html).toContain('rather than guessing one');
+    expect(html).not.toContain('No significant offset detected');
+  });
+
+  it('never presents a delay as evidence of manipulation', () => {
+    const html = withSync({status:'experimental', confidence:'measured', offset_seconds:-1.64,
+      correlation:0.455, peak_margin:0.09});
+    expect(html).toContain('not evidence of manipulation');
+  });
+});

@@ -62,6 +62,26 @@ def _timing(video):
         correlation = {'status': 'experimental_unvalidated', **cross_correlation(audio_times, energy, video_times, opening)}
     except ValueError:
         correlation = {'status': 'unavailable'}
+    # Global audio/video delay search over +/-3 s. The band-limited DTW path above
+    # cannot express a multi-second offset, so this answers a different question:
+    # is the whole audio track shifted relative to the picture? Reported with a
+    # confidence tier; below it, no offset is claimed.
+    from .global_sync import estimate_global
+    try:
+        sync = estimate_global(audio_times, energy, video_times, opening)
+        sync_block = {
+            'status': sync['status'], 'confidence': sync['confidence'],
+            'offset_seconds': (sync['candidate_video_minus_audio_seconds']
+                               if sync['confidence'] != 'unreliable' else None),
+            'correlation': sync['correlation'], 'peak_margin': sync['peak_margin'],
+            'boundary_hit': sync['boundary_hit'], 'reasons': sync['reasons'],
+            'convention': 'positive means the picture lags the audio',
+            'note': ('A measured offset is a playback synchronization issue, not evidence of '
+                     'manipulation. Delay and deepfake are different questions.'),
+        }
+    except (ValueError, RuntimeError):
+        sync_block = {'status': 'unavailable', 'confidence': 'unreliable', 'offset_seconds': None}
+
     # The classifier-facing DTW feature vector. Computed on every run so the
     # interface can show what the temporal model does (or would) consume.
     try:
@@ -78,6 +98,7 @@ def _timing(video):
             'median_video_minus_audio_seconds': aligned['median_video_minus_audio_seconds'],
             'normalized_cost': aligned['normalized_cost'], 'caveat': aligned['caveat'],
             'dtw_features': features_block,
+            'global_sync': sync_block,
             '_dtw_values': dtw_values,
             'used_for_prediction': False}
 

@@ -51,7 +51,24 @@ def estimate_global(audio_times, audio_values, video_times, video_values, *, max
     reasons = []
     if score < min_correlation: reasons.append('weak_correlation')
     if margin < min_margin: reasons.append('ambiguous_peak')
+    # Confidence tier, calibrated on a measured delay-recovery run (15 November
+    # 2026): three clean single-speaker clips, imposed shifts of +/-0.8 and
+    # +/-1.6 s. Clips whose peak correlation reached ~0.39+ recovered every shift
+    # exactly (0 ms error); the clip peaking at 0.22 was wrong by 2.2-4.7 s. The
+    # boundary is drawn from three clips and is a working heuristic, not a
+    # calibrated probability.
+    if score >= .35 and margin >= .05:
+        confidence = 'measured'
+    elif score >= .25:
+        confidence = 'low'
+    else:
+        confidence = 'unreliable'
+    if confidence == 'unreliable':
+        reasons.append('correlation_too_weak_to_report_an_offset')
     return {'status':'rejected' if reasons else 'experimental', 'reasons':reasons,
+            'confidence':confidence,
+            'confidence_basis':'peak correlation and margin, thresholds set from a '
+                               'three-clip delay-recovery run; not a calibrated probability',
             'candidate_video_minus_audio_seconds':lag, 'correlation':score, 'peak_margin':margin,
             'boundary_hit':bool(abs(lag) >= radius/rate - 1e-9), 'usable_seconds':float((n-1)/rate),
             'candidate_count':len(candidates), 'sample_rate_hz':rate,

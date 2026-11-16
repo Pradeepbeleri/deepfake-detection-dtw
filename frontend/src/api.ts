@@ -1,6 +1,6 @@
 export type Health = { service: string; model: 'unavailable' | 'configured_unverified'; note: string };
 export type DtwFeatures = Record<string, number | null>;
-export type Analysis = { classification: { classification: 'real' | 'fake'; score: number; threshold: number; score_kind: string; warning: string; prediction_source?: string; baseline_v1_score?: number; mode?: string; dtw_used_for_prediction?: boolean }; temporal_model?: { status: string; mode?: string; reason?: string }; timing: { status: string; dtw_features?: DtwFeatures; audio_times_seconds?: number[]; video_times_seconds?: number[]; median_video_minus_audio_seconds?: number; normalized_cost?: number; reason?: string; caveat?: string; signals?: {audio_times_seconds: number[]; audio_rms: number[]; video_times_seconds: number[]; lip_aperture: number[]}; cross_correlation?: {status: string; offset_seconds?: number; correlation?: number; search_boundary?: boolean} }; warning: string };
+export type Analysis = { classification: { classification: 'real' | 'fake'; score: number; threshold: number; score_kind: string; warning: string; prediction_source?: string; baseline_v1_score?: number; mode?: string; dtw_used_for_prediction?: boolean }; temporal_model?: { status: string; mode?: string; reason?: string }; timing: { status: string; dtw_features?: DtwFeatures; global_sync?: { status: string; confidence: string; offset_seconds?: number | null; correlation?: number; peak_margin?: number; boundary_hit?: boolean; reasons?: string[]; convention?: string; note?: string }; audio_times_seconds?: number[]; video_times_seconds?: number[]; median_video_minus_audio_seconds?: number; normalized_cost?: number; reason?: string; caveat?: string; signals?: {audio_times_seconds: number[]; audio_rms: number[]; video_times_seconds: number[]; lip_aperture: number[]}; cross_correlation?: {status: string; offset_seconds?: number; correlation?: number; search_boundary?: boolean} }; warning: string };
 export type Job = { status: 'queued' | 'processing' | 'interrupted' | 'failed' | 'completed_research_only'; error?: string; result?: Analysis };
 
 export function validateFile(file: Pick<File, 'name' | 'size'>): string | null {
@@ -43,6 +43,12 @@ export async function getJob(id: string, token: string, signal?: AbortSignal): P
       }
     }
     if (timing.cross_correlation?.status === 'experimental_unvalidated' && (!Number.isFinite(timing.cross_correlation.offset_seconds) || !Number.isFinite(timing.cross_correlation.correlation))) throw new Error('The service returned an invalid correlation result.');
+    const gs = timing.global_sync;
+    if (gs) {
+      if (typeof gs.status !== 'string' || typeof gs.confidence !== 'string') throw new Error('The service returned an invalid synchronization result.');
+      if (gs.offset_seconds !== undefined && gs.offset_seconds !== null && !Number.isFinite(gs.offset_seconds)) throw new Error('The service returned an invalid synchronization offset.');
+      if (gs.confidence === 'unreliable' && gs.offset_seconds !== null && gs.offset_seconds !== undefined) throw new Error('The service reported an offset it marked unreliable.');
+    }
     if (timing.dtw_features !== undefined && timing.dtw_features !== null) {
       const f = timing.dtw_features;
       if (typeof f !== 'object' || Array.isArray(f)) throw new Error('The service returned invalid DTW features.');
