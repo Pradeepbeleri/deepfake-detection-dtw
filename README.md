@@ -339,6 +339,7 @@ outside the checkout is the real protection.
 | --- | --- |
 | [System architecture](docs/system-architecture.md) | The system as actually built, component by component |
 | [DTW classifier evaluation](docs/dtw-classifier-evaluation.md) | The baseline / DTW / fusion ablation on real LAV-DF data |
+| [Adding training data](docs/adding-training-data.md) | Full procedure for feeding more labelled video in, and the two traps |
 | [Cross-detector generalisation](docs/cross-detector-generalisation.md) | Why an off-the-shelf published detector does not fix out-of-distribution failure |
 | [Scalable training notebook](notebooks/dtw_classifier_training.ipynb) | Colab notebook: DTW cache, ablation, learning curve, checkpoint export |
 | [Controlled DTW research validation](docs/dtw-research-validation.md) | DTW methodology, timing experiments, negative results, V2 protocol |
