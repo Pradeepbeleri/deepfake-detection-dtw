@@ -339,6 +339,7 @@ outside the checkout is the real protection.
 | --- | --- |
 | [System architecture](docs/system-architecture.md) | The system as actually built, component by component |
 | [DTW classifier evaluation](docs/dtw-classifier-evaluation.md) | The baseline / DTW / fusion ablation on real LAV-DF data |
+| [Scalable training notebook](notebooks/dtw_classifier_training.ipynb) | Colab notebook: DTW cache, ablation, learning curve, checkpoint export |
 | [Controlled DTW research validation](docs/dtw-research-validation.md) | DTW methodology, timing experiments, negative results, V2 protocol |
 | [Research report](docs/research-report.md) | Full academic report: methodology, mathematics, results, analysis |
 | [Demonstration script](docs/demonstration-script.md) | 10–12 minute faculty walkthrough, with the questions to expect |

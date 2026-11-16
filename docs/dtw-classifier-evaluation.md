@@ -132,6 +132,38 @@ and much less than "DTW improves deepfake detection".
 The deployable checkpoint is the tuned fusion arm at seed 42, which scores **46/56 (82.1%)** on
 held-out test: 8 genuine videos flagged fake, 2 fakes missed.
 
+## 2b. Learning curve — is the model data-limited?
+
+Training subsets of increasing size were drawn stratified (equal real/fake) from the train
+partition. Validation and test are never subsampled, so every point is scored on the same 56
+held-out videos. Five seeds per size, tuned hyperparameters.
+
+![Accuracy and ROC-AUC against training-set size](figures/fig4-learning-curve.svg)
+
+| Training videos | baseline acc | baseline AUC | fusion acc | fusion AUC |
+| ---: | ---: | ---: | ---: | ---: |
+| 16 | 0.679 | 0.791 | 0.682 | 0.788 |
+| 24 | 0.729 | 0.800 | 0.732 | 0.820 |
+| 32 | 0.754 | 0.839 | 0.721 | 0.839 |
+| 40 | 0.775 | 0.869 | 0.771 | 0.873 |
+| 48 | 0.782 | 0.870 | 0.775 | 0.871 |
+| 60 | 0.814 | 0.891 | 0.829 | 0.901 |
+
+**The curve has not flattened.** Accuracy rises 0.679 → 0.829 from 16 to 60 training videos, and
+the last step (48 → 60) still adds 4.7 accuracy points. This model is **data-limited, not
+architecture-limited**: collecting more labelled video is the highest-value next step, and
+tuning the head further is not.
+
+A second observation: **the fusion advantage only appears at the largest training size.** At 16
+to 48 videos the arms are tied or baseline is marginally ahead; fusion pulls clear only at 60.
+That is what one expects if the 16 DTW features need enough data to be fitted before they earn
+their place — below that they are just extra parameters to overfit. It also means the +0.009 AUC
+measured in section 2a may itself grow with more data, which is a hypothesis for the next run,
+not a result.
+
+`notebooks/dtw_classifier_training.ipynb` reproduces this curve and extends it automatically to
+whatever training-set sizes the available data supports.
+
 ## 3. What these numbers mean
 
 **DTW timing features are weakly but genuinely predictive.** ROC-AUC 0.690 (range 0.680–0.699
