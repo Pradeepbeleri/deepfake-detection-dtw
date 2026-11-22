@@ -134,6 +134,25 @@ def test_corrupt_classifier_checkpoint_is_rejected(tmp_path):
         load_classifier(str(checkpoint),checkpoint_sha256=digest)
 
 
+def test_demo_adaptation_is_disclosed_in_prediction(tmp_path):
+    import hashlib
+    import torch
+    from deepfake_dtw.inference import predict
+
+    _, kwargs, create_features = inference_fixture(tmp_path)
+    features = tmp_path / 'features.npz'
+    create_features(features)
+    checkpoint = Path(kwargs['classifier_checkpoint'])
+    artifact = torch.load(checkpoint, weights_only=True)
+    artifact['training_scope'] = 'drive_demo_adaptation'
+    torch.save(artifact, checkpoint)
+    digest = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
+
+    result = predict(features, checkpoint, checkpoint_sha256=digest)
+    assert result['prediction_source'] == 'drive_demo_adapted'
+    assert 'adapted using the Drive demo clips' in result['warning']
+
+
 def test_missing_ffmpeg_or_wrong_encoder_stops_before_extraction(tmp_path,monkeypatch):
     import deepfake_dtw.analyze as module
     video,kwargs,_=inference_fixture(tmp_path)
@@ -150,7 +169,8 @@ def test_optional_dtw_cannot_change_classification(tmp_path,monkeypatch):
     import deepfake_dtw.analyze as module
     video,kwargs,create_features=inference_fixture(tmp_path)
     monkeypatch.setattr(module,'_preflight',lambda **_:object())
-    monkeypatch.setattr(module,'_extract',lambda *a,**k:{'status':'features_extracted'})
+    monkeypatch.setattr(module,'_extract',lambda *a,**k:{
+        'status':'features_extracted', 'media':{'audio_minus_video_seconds':0.2}})
     expected={'classification':'fake','score':0.7,'score_kind':'uncalibrated sigmoid','dtw_used_for_prediction':False}
     monkeypatch.setattr(module,'_predict',lambda *a:expected.copy())
     monkeypatch.setattr(module,'_timing',lambda _: (_ for _ in ()).throw(ValueError('insufficient face quality')))
@@ -163,6 +183,7 @@ def test_optional_dtw_cannot_change_classification(tmp_path,monkeypatch):
     assert result['classification']['prediction_source'] == 'baseline_v1_embeddings'
     assert result['temporal_model']['status'] == 'not_configured'
     assert result['timing']['status']=='unavailable' and result['timing']['used_for_prediction'] is False
+    assert result['timing']['stream_start_audio_minus_video_seconds'] == 0.2
 
 
 def test_configured_temporal_model_produces_the_prediction(tmp_path, monkeypatch):

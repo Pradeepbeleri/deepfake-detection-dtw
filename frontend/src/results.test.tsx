@@ -25,6 +25,17 @@ describe('result rendering: synthetic fixtures only', () => {
     expect(html).toContain('Timing analysis unavailable');
     expect(html).not.toContain('<polyline');
   });
+  it('shows a delayed stream start alongside a real model label and DTW path', () => {
+    const timing = { ...fixture.timing, stream_start_audio_minus_video_seconds: .2,
+      max_warp_seconds: .4, isolated_missing_frames: 2 };
+    const html = renderToStaticMarkup(<ResultDetails result={{ ...fixture, timing }}/>);
+    expect(html).toContain('Model label: real');
+    expect(html).toContain('Audio starts 200 ms after video');
+    expect(html).toContain('Audio content can still be delayed within the stream');
+    expect(html).toContain('within ±0.40 s of the diagonal');
+    expect(html).toContain('skipped 2 isolated frames with no detected face');
+    expect(html).toContain('<polyline');
+  });
   it('plots only supplied signal samples and labels the separate scales', () => {
     const timing = {...fixture.timing, signals: {audio_times_seconds:[0,1], audio_rms:[.2,.4], video_times_seconds:[0,1], lip_aperture:[.1,.3]}, cross_correlation:{status:'experimental_unvalidated',offset_seconds:.2,correlation:.4}};
     const html=renderToStaticMarkup(<ResultDetails result={{...fixture,timing}}/>);
@@ -46,6 +57,14 @@ describe('DTW feature display and prediction provenance', () => {
       prediction_source:'baseline_v1_embeddings', dtw_used_for_prediction:false } };
     const html = renderToStaticMarkup(<ResultDetails result={result}/>);
     expect(html).toContain('Baseline V1');
+    expect(html).toContain('does <b>not</b> affect this prediction');
+  });
+
+  it('identifies the model adapted using the Drive demo clips', () => {
+    const result = { ...base, classification: { ...base.classification,
+      prediction_source: 'drive_demo_adapted', dtw_used_for_prediction: false } };
+    const html = renderToStaticMarkup(<ResultDetails result={result}/>);
+    expect(html).toContain('Drive demo model — trained on the demo clips');
     expect(html).toContain('does <b>not</b> affect this prediction');
   });
 

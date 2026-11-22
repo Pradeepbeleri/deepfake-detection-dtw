@@ -24,3 +24,18 @@ def test_rejects_missing_and_multiple_faces():
         lip_aperture(frames, lambda frame: [])
     with pytest.raises(ValueError, match='exactly one face'):
         lip_aperture(frames, lambda frame: [np.zeros((468, 2)), np.zeros((468, 2))])
+
+
+def test_display_timing_skips_only_isolated_missing_frames():
+    frames = prepare_video(np.zeros((5, 16, 16, 3), dtype=np.uint8), np.arange(5) / 25)
+    points = np.full((468, 2), .5)
+    points[61], points[291] = [.4, .5], [.6, .5]
+    points[13], points[14] = [.5, .48], [.5, .52]
+    detections = iter([[points], [], [points], [], [points]])
+    times, values = lip_aperture(frames, lambda _: next(detections), allow_isolated_gaps=True)
+    assert times.tolist() == pytest.approx([0, .08, .16])
+    assert values.tolist() == pytest.approx([.2, .2, .2])
+    for bad in ([], [points, points]):
+        detections = iter([[points], [], bad, [points], [points]])
+        with pytest.raises(ValueError, match='exactly one face'):
+            lip_aperture(frames, lambda _: next(detections), allow_isolated_gaps=True)

@@ -52,24 +52,26 @@ def _timing(video):
     audio, video_frames, _ = read_mp4(video)
     detector = FaceMeshDetector()
     try:
-        video_times, opening = lip_aperture(video_frames, detector)
+        video_times, opening = lip_aperture(video_frames, detector, allow_isolated_gaps=True)
     finally:
         detector.close()
     audio_times, energy = audio_energy(audio)
     aligned = constrained_dtw(audio_times, energy, video_times, opening)
+    missing_frames = len(video_frames.timestamps) - len(video_times)
     from .sync_experiment import cross_correlation
     try:
         correlation = {'status': 'experimental_unvalidated', **cross_correlation(audio_times, energy, video_times, opening)}
     except ValueError:
         correlation = {'status': 'unavailable'}
-    # The classifier-facing DTW feature vector. Computed on every run so the
-    # interface can show what the temporal model does (or would) consume.
-    try:
-        dtw_values = dtw_features(audio_times, energy, video_times, opening)
-        features_block = {name: (None if value != value else float(value))
-                          for name, value in dtw_values.items()}
-    except (ValueError, RuntimeError):
-        dtw_values, features_block = None, None
+    # The trained temporal model expects the original strict face-track policy.
+    dtw_values, features_block = None, None
+    if not missing_frames:
+        try:
+            dtw_values = dtw_features(audio_times, energy, video_times, opening)
+            features_block = {name: (None if value != value else float(value))
+                              for name, value in dtw_values.items()}
+        except (ValueError, RuntimeError):
+            pass
     return {'status': 'experimental_unvalidated', 'audio_times_seconds': aligned['audio_times'].tolist(),
             'video_times_seconds': aligned['video_times'].tolist(),
             'signals': {'audio_times_seconds': audio_times.tolist(), 'audio_rms': energy.tolist(),
@@ -77,6 +79,7 @@ def _timing(video):
             'cross_correlation': correlation,
             'median_video_minus_audio_seconds': aligned['median_video_minus_audio_seconds'],
             'normalized_cost': aligned['normalized_cost'], 'caveat': aligned['caveat'],
+            'max_warp_seconds': aligned['max_warp_seconds'], 'isolated_missing_frames': missing_frames,
             'dtw_features': features_block,
             '_dtw_values': dtw_values,
             'used_for_prediction': False}
@@ -113,6 +116,9 @@ def analyze(video, *, audio_checkpoint, visual_checkpoint, visual_sha256, dinov2
                 timing = _timing(video)
             except (ValueError, RuntimeError, OSError, ImportError) as exc:
                 timing = {'status': 'unavailable', 'reason': str(exc), 'used_for_prediction': False}
+            media = report.get('media', {})
+            if 'audio_minus_video_seconds' in media:
+                timing['stream_start_audio_minus_video_seconds'] = media['audio_minus_video_seconds']
 
         # When a trained temporal model is configured it REPLACES the reported
         # prediction, and DTW features are part of its input. Without one the
@@ -148,7 +154,7 @@ def analyze(video, *, audio_checkpoint, visual_checkpoint, visual_sha256, dinov2
         result.setdefault('prediction_source', 'baseline_v1_embeddings')
         return {'status': 'completed_research_only', 'classification': result, 'timing': timing,
                 'temporal_model': temporal,
-                'warning': 'Uncalibrated research result; timing is not used by the classifier. No deployment claim is made.'}
+                'warning': 'Uncalibrated research result. See the prediction source for the inputs used.'}
 
 
 def main():

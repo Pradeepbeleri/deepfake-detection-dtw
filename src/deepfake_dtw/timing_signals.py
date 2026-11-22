@@ -3,15 +3,20 @@ import numpy as np
 from .faces import _iou
 
 
-def lip_aperture(video, detector):
-    """Return per-frame normalized lip opening; reject gaps and ambiguous tracks."""
+def lip_aperture(video, detector, *, allow_isolated_gaps=False):
+    """Return normalized lip opening, optionally skipping isolated missing frames."""
     values, times = [], []
     previous = None
+    missed_previous = False
     for frame, timestamp in zip(video.values, video.timestamps):
         rgb = (frame.permute(1, 2, 0).cpu().numpy() * 255).round().clip(0, 255).astype(np.uint8)
         faces = detector(rgb)
+        if not faces and allow_isolated_gaps and not missed_previous:
+            missed_previous = True
+            continue
         if len(faces) != 1:
             raise ValueError('Timing analysis needs exactly one face in every sampled frame')
+        missed_previous = False
         points = np.asarray(faces[0], dtype=float)
         if points.ndim != 2 or points.shape[0] <= 291 or points.shape[1] < 2 or not np.isfinite(points[:, :2]).all():
             raise ValueError('Invalid face landmarks')

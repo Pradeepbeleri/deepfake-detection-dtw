@@ -70,12 +70,17 @@ def predict_loaded(features, loaded):
         raise ValueError('Non-finite classifier output')
     scope = artifact.get('provenance_scope', 'identity_and_recording')
     scope_note = ' Identity-disjoint evaluation is not established.' if scope == 'provider_source_recording' else ''
+    demo_source = {}
+    if artifact.get('training_scope') == 'drive_demo_adaptation':
+        scope_note = ' This model was adapted using the Drive demo clips.'
+        demo_source = {'prediction_source': 'drive_demo_adapted'}
     return {'provenance_scope': scope, 'identity_disjoint_verified': False,
             'classification': 'fake' if score >= loaded['threshold'] else 'real',
             'score': score, 'threshold': loaded['threshold'], 'score_kind': 'uncalibrated sigmoid',
             'classifier_sha256': loaded['sha256'], 'encoder_provenance': item['provenance'],
             'device': str(loaded['device']), 'dtw_used_for_prediction': False,
-            'warning': 'Research output; scores are uncalibrated and may not generalize. Not identity verification.' + scope_note}
+            'warning': 'Research output; scores are uncalibrated and may not generalize. Not identity verification.' + scope_note,
+            **demo_source}
 
 
 def predict(features, checkpoint, *, checkpoint_sha256, device='cpu'):
