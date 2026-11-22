@@ -31,19 +31,22 @@ describe('research API integration', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({detail:'Model unavailable or not authorized'}), {status:503})));
     await expect(getHealth()).rejects.toThrow('Model unavailable or not authorized');
   });
-  it('sends raw MP4 and reports actual upload progress', async () => {
+  it.each(['test', ''])('sends raw MP4 and reports progress with local or hosted access (%j)', async (token) => {
     let sent = false;
+    const headers = new Map<string, string>();
     class XHR {
       status = 202; responseText = JSON.stringify({job_id:'a'.repeat(32)}); upload = {onprogress: (_event: {lengthComputable:boolean;loaded:number;total:number}) => {}};
       onload = () => {}; onerror = () => {};
       open(method: string, url: string) { expect(method).toBe('POST'); expect(url).toBe('/api/jobs'); }
-      setRequestHeader(_key:string, _value:string) {}
+      setRequestHeader(key: string, value: string) { headers.set(key, value); }
       send() { sent = true; this.upload.onprogress({lengthComputable:true,loaded:5,total:10}); this.onload(); }
     }
     vi.stubGlobal('XMLHttpRequest', XHR);
     const progress: (number|null)[] = [];
-    expect(await upload({} as File, 'test', value => progress.push(value))).toBe('a'.repeat(32));
+    expect(await upload({} as File, token, value => progress.push(value))).toBe('a'.repeat(32));
     expect(sent).toBe(true); expect(progress).toEqual([50]);
+    expect(headers.get('X-Demo-Request')).toBe('1');
+    expect(headers.get('Authorization')).toBe(token ? `Bearer ${token}` : undefined);
   });
 });
 

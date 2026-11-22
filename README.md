@@ -1,3 +1,10 @@
+---
+title: Sync Study
+sdk: docker
+app_port: 7860
+hf_oauth: true
+---
+
 # Deepfake Detection for Identity Impersonation Using Dynamic Time Warping
 
 A research prototype investigating whether **temporal inconsistencies between speech and
@@ -367,3 +374,7 @@ service. A software licence never grants rights to a dataset or to the people de
 Media used for demonstrations must be recorded with explicit, informed consent.
 
 This repository distributes **no** model weights, no media and no dataset.
+
+### Hosted classroom demo
+
+The private Docker Space uses Hugging Face sign-in for the approved operator and runs the same baseline inference and DTW upload workflow. See the [private Space setup and rehearsal guide](docs/hugging-face-demo.md).

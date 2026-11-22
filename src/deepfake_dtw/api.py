@@ -37,7 +37,8 @@ def _run_inference(upload, cfg, work_dir):
     if cfg.get('temporal_checkpoint') and cfg.get('temporal_sha256'):
         command += ['--temporal-checkpoint', cfg['temporal_checkpoint'],
                     '--temporal-sha256', cfg['temporal_sha256']]
-    secret_names = {'DEEPFAKE_API_TOKEN', 'HF_TOKEN', 'HUGGING_FACE_HUB_TOKEN', 'GOOGLE_APPLICATION_CREDENTIALS'}
+    secret_names = {'DEEPFAKE_API_TOKEN', 'HF_TOKEN', 'HUGGING_FACE_HUB_TOKEN', 'GOOGLE_APPLICATION_CREDENTIALS',
+                    'OAUTH_CLIENT_SECRET', 'DEEPFAKE_SESSION_SECRET'}
     environment = {key: value for key, value in os.environ.items()
                    if key not in secret_names and not key.startswith(('GH_', 'GITHUB_', 'AWS_', 'AZURE_'))}
     environment['TMPDIR'] = str(work_dir)
