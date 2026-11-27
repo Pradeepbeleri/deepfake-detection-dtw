@@ -26,8 +26,8 @@ async function checked(response: Response) {
   return response.json();
 }
 export async function getHealth(signal?: AbortSignal): Promise<Health> { return checked(await fetch('/api/health', { signal })); }
-export async function getJob(id: string, token: string, signal?: AbortSignal): Promise<Job> {
-  const value = await checked(await fetch(`/api/jobs/${encodeURIComponent(id)}`, { headers: token ? { Authorization: `Bearer ${token}` } : {}, signal }));
+export async function getJob(id: string, signal?: AbortSignal): Promise<Job> {
+  const value = await checked(await fetch(`/api/jobs/${encodeURIComponent(id)}`, { signal }));
   if (!value || !['queued', 'processing', 'interrupted', 'failed', 'completed_research_only'].includes(value.status)) throw new Error('The service returned an invalid job state.');
   if (value.status === 'completed_research_only') {
     const classification = value.result?.classification, timing = value.result?.timing;
@@ -56,12 +56,11 @@ export async function getJob(id: string, token: string, signal?: AbortSignal): P
   }
   return value as Job;
 }
-export async function deleteJob(id: string, token: string): Promise<void> { const response = await fetch(`/api/jobs/${encodeURIComponent(id)}`, { method: 'DELETE', headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), 'X-Demo-Request': '1' } }); if (!response.ok) { let message = `Delete failed (${response.status}).`; try { const body = await response.json(); if (typeof body.detail === 'string') message = body.detail; } catch { /* Keep generic message. */ } throw new Error(message); } }
-export function upload(file: File, token: string, onProgress: (value: number | null) => void): Promise<string> {
+export async function deleteJob(id: string): Promise<void> { const response = await fetch(`/api/jobs/${encodeURIComponent(id)}`, { method: 'DELETE', headers: { 'X-Demo-Request': '1' } }); if (!response.ok) { let message = `Delete failed (${response.status}).`; try { const body = await response.json(); if (typeof body.detail === 'string') message = body.detail; } catch { /* Keep generic message. */ } throw new Error(message); } }
+export function upload(file: File, onProgress: (value: number | null) => void): Promise<string> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest(); xhr.open('POST', '/api/jobs');
     xhr.setRequestHeader('Content-Type', 'video/mp4'); xhr.setRequestHeader('X-Demo-Request', '1');
-    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
     xhr.upload.onprogress = e => onProgress(e.lengthComputable ? Math.round(e.loaded / e.total * 100) : null);
     xhr.onerror = () => reject(new Error('Could not reach the local research service.'));
     xhr.onload = () => {

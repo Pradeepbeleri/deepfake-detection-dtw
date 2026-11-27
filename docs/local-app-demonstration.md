@@ -6,11 +6,9 @@ This is a **single-user, local research demonstration**, not a public or product
 
 The API currently requires Linux (or a compatible WSL2 environment) because it uses POSIX process groups and file locking. Use the existing Python 3.12 project environment and install `requirements-api.txt`; install the frontend packages with `npm ci` in `frontend`. Installation requires network access unless the exact packages are already cached. The inference process itself is designed to use local checkpoints and code.
 
-Set the following in a private shell, substituting your own absolute paths and a strong random token. Do not put a real token in a committed file or shell history:
+Set the following in Ubuntu, substituting your own absolute paths:
 
 ```bash
-read -rs -p 'Local API token (at least 32 characters): ' DEEPFAKE_API_TOKEN; printf '\n'
-export DEEPFAKE_API_TOKEN
 export DEEPFAKE_PRIVATE_ROOT='/absolute/private/service-storage'
 export DEEPFAKE_AUDIO_CHECKPOINT='/absolute/private/tiny.en.pt'
 export DEEPFAKE_VISUAL_CHECKPOINT='/absolute/private/dinov2_vits14_pretrain.pth'
@@ -20,10 +18,10 @@ export DEEPFAKE_CLASSIFIER_CHECKPOINT='/absolute/private/lavdf/baseline.pt'
 export DEEPFAKE_CLASSIFIER_SHA256='f2bbc8e03d963ea0ce077a68513c3328c9fc7b9e4b3c3ad4f184c283cad17902'
 export DEEPFAKE_AUTHORIZED_MODELS=1
 export DEEPFAKE_DEVICE=cpu
-OMP_NUM_THREADS=2 XFORMERS_DISABLED=1 .venv/bin/python -m uvicorn deepfake_dtw.api:create_app --factory --host 127.0.0.1 --port 8000 --no-access-log
+OMP_NUM_THREADS=2 XFORMERS_DISABLED=1 .venv/bin/python -m uvicorn deepfake_dtw.api:create_app --factory --host 127.0.0.1 --port 8000 --no-proxy-headers --no-access-log
 ```
 
-Set the authorization flag only when the relevant model and media uses are permitted. The service rejects non-loopback clients, requires the bearer token for job access, limits uploads to 100 MB, bounds the queue, uses a single worker and caps an inference subprocess at five minutes. The decoder accepts MP4s up to 30 seconds with exactly one audio and one video stream; it also applies frame and dimension limits. The FFmpeg/ffprobe binaries, pinned source checkout and model files must be present. Health says `configured_unverified` until the actual run verifies the hashes and model compatibility; file existence alone is not a readiness test.
+Set the authorization flag only when the relevant model and media uses are permitted. The service rejects non-loopback clients, limits uploads to 100 MB, bounds the queue, uses a single worker and caps an inference subprocess at five minutes. The decoder accepts MP4s up to 30 seconds with exactly one audio and one video stream; it also applies frame and dimension limits. The FFmpeg/ffprobe binaries, pinned source checkout and model files must be present. Health says `configured_unverified` until the actual run verifies the hashes and model compatibility; file existence alone is not a readiness test.
 
 In another local shell, start the UI:
 
@@ -33,7 +31,7 @@ npm ci
 npm run dev
 ```
 
-Open the printed `http://127.0.0.1:5173/` address, enter the same token, and choose a consented talking-face MP4. The preview plays the embedded audio, and the browser checks duration and dimensions before submitting; the service independently validates the actual streams. The browser shows actual upload progress and server queue/processing states. The API deletes its upload and per-job feature workspace on completion or handled failure. A completed or failed job report remains in configured private storage until **Delete saved result** is selected. Save the displayed job ID to recover it after a refresh using **Recover a saved job** and the same access token. If the submission response is lost before its job ID is displayed, inspect the dedicated private job directory on the service machine. Do not expose the Vite or Uvicorn port publicly or through a remote proxy.
+Open the printed `http://127.0.0.1:5173/` address, choose a consented talking-face MP4. The preview plays the embedded audio, and the browser checks duration and dimensions before submitting; the service independently validates the actual streams. The browser shows actual upload progress and server queue/processing states. The API deletes its upload and per-job feature workspace on completion or handled failure. A completed or failed job report remains in configured private storage until **Delete saved result** is selected. Save the displayed job ID to recover it after a refresh using **Recover a saved job**. If the submission response is lost before its job ID is displayed, inspect the dedicated private job directory on the service machine. Do not expose the Vite or Uvicorn port publicly or through a remote proxy.
 
 The browser labels separate audio/video mode unavailable. A separate local research probe exists for consented files:
 
@@ -67,8 +65,7 @@ The LAV-DF provider terms and underlying VoxCeleb2 conditions require review for
 - The pinned stack is what the recorded LAV-DF experiment ran on. Upgrading `torch` would
   break reproducibility of the one evaluation this project reports, and the handoff constraint
   is that the trained classifier, its threshold and its recorded evaluation stay unchanged.
-- The exposure is bounded by how the service is run: loopback-only, single operator, bearer
-  token, no untrusted input other than a local MP4 the operator chose, checkpoints loaded only
+- The exposure is bounded by how the service is run: loopback-only, single operator, operator-selected MP4 input, checkpoints loaded only
   after a full SHA-256 match, and `torch.load` restricted with `weights_only=True`.
 
 This is a *rationale for accepting the risk in a local research prototype*, not a claim that
@@ -76,4 +73,4 @@ the dependencies are safe. **Anything beyond local single-operator research must
 stack first and re-validate**, accepting that the recorded metrics would then need to be
 re-derived. Re-run `pip-audit` before any such change; the advisory set grows over time.
 
-A shared local token, no TLS, no per-user access control, no per-client rate limiting, no hardened media sandbox, no external security review and limited recovery after a forced process kill make this unsuitable for public deployment. The timeout kills the inference process group during normal operation, but a forced server kill can leave a child process requiring operating-system supervision. A public release also needs a privacy/retention policy, robust authentication and transport security, independent security and accessibility review, broader evaluation, and deployment-rights review. Do not treat this local test as production readiness.
+No TLS, no per-user access control, no per-client rate limiting, no hardened media sandbox, no external security review and limited recovery after a forced process kill make this unsuitable for public deployment. The timeout kills the inference process group during normal operation, but a forced server kill can leave a child process requiring operating-system supervision. A public release also needs a privacy/retention policy, robust authentication and transport security, independent security and accessibility review, broader evaluation, and deployment-rights review. Do not treat this local test as production readiness.

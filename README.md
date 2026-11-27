@@ -72,7 +72,7 @@ A fuller statement of what is implemented versus proposed is in
                  ┌──────────────────────── local, loopback only ───────────────────────┐
                  │                                                                     │
   consented      │   React / TypeScript          FastAPI job service                   │
-  MP4 ──────────►│   research frontend  ──POST──►  (bearer token, 127.0.0.1,           │
+  MP4 ──────────►│   research frontend  ──POST──►  (loopback only, 127.0.0.1,           │
   (<=30 s,       │   preview, validation          bounded queue, 100 MB cap,           │
    <=100 MB)     │   real job states              5-minute inference timeout)          │
                  │          ▲                               │                          │
@@ -134,7 +134,7 @@ the frontend renders the timing panel in a separate, explicitly experimental sec
   checkpoints, with no silent fallback and no network download.
 - Provenance-checked classifier inference: encoder provenance recorded in the checkpoint must
   match the features, or inference refuses to run.
-- Local FastAPI job service: loopback-only, bearer-token authenticated, bounded queue,
+- Local FastAPI job service: loopback-only, bounded queue,
   atomic job records, upload and temporary-workspace cleanup, interrupted-job recovery
   after restart, and result deletion.
 - React/TypeScript research frontend: real upload progress, genuine queue/processing/completed
@@ -274,7 +274,7 @@ Full methodology, per-shift rows, rejection accounting and the V2 protocol are i
 - **Single-speaker timing evidence.** Every DTW measurement comes from one consented clip.
 - **Unknown ground-truth synchronization.** The source recording's natural audio/lip offset was
   never measured, so absolute synchronization accuracy cannot be claimed.
-- **Local research only.** Shared token, no TLS, no per-user access control, no rate limiting,
+- **Local research only.** No TLS, no per-user access control, no rate limiting,
   no hardened media sandbox, no external security review.
 - **Known vulnerable dependencies.** `pip-audit` reports 26 advisories against the pinned
   stack (23 `torch` 2.5.1, 3 `starlette` 0.46.2). They are deliberately not patched, because

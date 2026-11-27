@@ -4,23 +4,23 @@ from fastapi.testclient import TestClient as BaseTestClient
 
 
 def TestClient(app):
-    return BaseTestClient(app, client=("127.0.0.1", 50000))
+    return BaseTestClient(app, client=("127.0.0.1", 50000), base_url="http://localhost")
 import pytest
 from deepfake_dtw.api import create_app
 
 
 def config(tmp_path, authorized=True):
     weight = tmp_path/'weights'; weight.write_bytes(b'synthetic placeholder')
-    return {'token': 'x'*32, 'private_root': str(tmp_path/'private'), 'audio_checkpoint': str(weight),
+    return {'private_root': str(tmp_path/'private'), 'audio_checkpoint': str(weight),
             'visual_checkpoint': str(weight), 'visual_sha256': 'a'*64, 'dinov2_source': str(tmp_path),
             'classifier_checkpoint': str(weight), 'classifier_sha256': 'b'*64, 'authorized': authorized, 'device': 'cpu'}
 
 
-def test_requires_auth_and_model_authorization(tmp_path):
+def test_requires_demo_header_and_model_authorization(tmp_path):
     client = TestClient(create_app(config(tmp_path, authorized=False)))
     assert client.get('/health').json()['model'] == 'unavailable'
-    assert client.post('/jobs', content=b'test', headers={'content-type':'video/mp4'}).status_code == 401
-    headers = {'content-type':'video/mp4', 'authorization':'Bearer '+'x'*32}
+    assert client.post('/jobs', content=b'test', headers={'content-type':'video/mp4'}).status_code == 403
+    headers = {'content-type':'video/mp4', 'X-Demo-Request':'1'}
     assert client.post('/jobs', content=b'test', headers=headers).status_code == 503
     assert client.get('/jobs/../../secret', headers=headers).status_code == 404
 
@@ -31,7 +31,7 @@ def test_bounded_job_persists_and_removes_private_upload(tmp_path, monkeypatch):
         return {'status':'completed_research_only', 'result':{'warning':'synthetic test fixture'}}
     monkeypatch.setattr('deepfake_dtw.api._run_inference', fake_analysis)
     cfg = config(tmp_path); client = TestClient(create_app(cfg))
-    headers = {'content-type':'video/mp4', 'authorization':'Bearer '+'x'*32}
+    headers = {'content-type':'video/mp4', 'X-Demo-Request':'1'}
     assert client.get('/health').json()['model'] == 'configured_unverified'
     assert client.post('/jobs', content=b'', headers=headers).status_code == 400
     response = client.post('/jobs', content=b'not real media', headers=headers)
@@ -48,16 +48,15 @@ def test_bounded_job_persists_and_removes_private_upload(tmp_path, monkeypatch):
     assert client.get('/jobs/'+job_id, headers=headers).status_code == 404
 
 
-def test_configuration_rejects_weak_token(tmp_path):
-    cfg = config(tmp_path); cfg['token'] = 'short'
-    with pytest.raises(ValueError, match='bearer token'):
-        create_app(cfg)
+def test_nonlocal_host_is_rejected_even_from_loopback(tmp_path):
+    with TestClient(create_app(config(tmp_path))) as client:
+        assert client.get('/health', headers={'Host': 'example.test'}).status_code == 403
 
 
 def test_rejects_oversized_and_wrong_content_type(tmp_path, monkeypatch):
     monkeypatch.setattr('deepfake_dtw.api.MAX_UPLOAD', 4)
     client = TestClient(create_app(config(tmp_path)))
-    auth = {'authorization': 'Bearer ' + 'x'*32}
+    auth = {'X-Demo-Request': '1'}
     assert client.post('/jobs', content=b'12345', headers={**auth, 'content-type':'video/mp4'}).status_code == 413
     assert client.post('/jobs', content=b'12', headers={**auth, 'content-type':'text/plain'}).status_code == 415
     assert not list((tmp_path/'private'/'uploads').iterdir())
@@ -71,7 +70,7 @@ def test_restart_marks_interrupted_and_cleans_owned_upload(tmp_path):
     (root/'jobs'/f'{job_id}.json').write_text(json.dumps({'status':'processing'}))
     (root/'uploads'/f'{job_id}.mp4').write_bytes(b'private fixture')
     with TestClient(create_app(cfg)) as client:
-        result = client.get('/jobs/'+job_id, headers={'authorization':'Bearer '+'x'*32})
+        result = client.get('/jobs/'+job_id)
         assert result.json()['status'] == 'interrupted'
         assert not (root/'uploads'/f'{job_id}.mp4').exists()
         with pytest.raises(ValueError, match='already used'):
@@ -86,7 +85,7 @@ def test_queue_bound_and_running_job_cannot_be_deleted(tmp_path, monkeypatch):
         return {'status':'failed','error':'synthetic fixture'}
     monkeypatch.setattr('deepfake_dtw.api._run_inference', slow)
     with TestClient(create_app(config(tmp_path))) as client:
-        headers={'content-type':'video/mp4','authorization':'Bearer '+'x'*32}
+        headers={'content-type':'video/mp4','X-Demo-Request':'1'}
         first=client.post('/jobs',content=b'fixture',headers=headers); assert first.status_code==202
         assert entered.wait(2)
         assert client.delete('/jobs/'+first.json()['job_id'],headers=headers).status_code==409
@@ -131,19 +130,19 @@ def test_inference_process_timeout_kills_process_group_and_hides_token(tmp_path,
     assert calls['command'][1:3]==['-m','deepfake_dtw.analyze'] and '--dtw' in calls['command']
 
 
-def test_delete_requires_auth_and_rejects_bad_ids(tmp_path):
+def test_delete_requires_demo_header_and_rejects_bad_ids(tmp_path):
     with TestClient(create_app(config(tmp_path))) as client:
-        assert client.delete('/jobs/'+'a'*32).status_code==401
-        headers={'authorization':'Bearer '+'x'*32}
+        assert client.delete('/jobs/'+'a'*32).status_code==403
+        headers={'X-Demo-Request':'1'}
         assert client.delete('/jobs/invalid',headers=headers).status_code==404
         assert client.delete('/jobs/'+'a'*32,headers=headers).status_code==404
         assert client.get('/health').headers['cache-control']=='no-store'
 
 
 def test_non_loopback_requests_are_rejected(tmp_path):
-    with BaseTestClient(create_app(config(tmp_path)), client=('203.0.113.10', 50000)) as client:
+    with BaseTestClient(create_app(config(tmp_path)), client=('203.0.113.10', 50000), base_url='http://localhost') as client:
         assert client.get('/health').status_code == 403
-        assert client.post('/jobs',content=b'fixture',headers={'authorization':'Bearer '+'x'*32,'content-type':'video/mp4'}).status_code == 403
+        assert client.post('/jobs',content=b'fixture',headers={'X-Demo-Request':'1','content-type':'video/mp4'}).status_code == 403
 
 
 @pytest.mark.parametrize('status,code', [('invalid_media','invalid_media'),('face_unusable','face_unusable'),('checkpoint_invalid','checkpoint_invalid')])

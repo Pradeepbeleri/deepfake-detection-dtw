@@ -1,10 +1,10 @@
 """Authenticated single-process local research API; not a public deployment."""
 import fcntl
-import hmac
 import ipaddress
 import json
 import logging
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -16,7 +16,7 @@ from pathlib import Path
 from threading import BoundedSemaphore, Lock
 from uuid import uuid4
 
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 
@@ -70,7 +70,6 @@ def _run_inference(upload, cfg, work_dir):
 
 def create_app(config=None):
     cfg = dict(config if config is not None else {
-        'token': os.environ.get('DEEPFAKE_API_TOKEN', ''),
         'private_root': os.environ.get('DEEPFAKE_PRIVATE_ROOT', ''),
         'audio_checkpoint': os.environ.get('DEEPFAKE_AUDIO_CHECKPOINT', ''),
         'visual_checkpoint': os.environ.get('DEEPFAKE_VISUAL_CHECKPOINT', ''),
@@ -83,9 +82,6 @@ def create_app(config=None):
         'authorized': os.environ.get('DEEPFAKE_AUTHORIZED_MODELS') == '1',
         'device': os.environ.get('DEEPFAKE_DEVICE', 'cpu'),
     })
-    token = cfg.get('token', '')
-    if not isinstance(token, str) or len(token) < 32:
-        raise ValueError('Configure a private API bearer token of at least 32 characters')
     if not cfg.get('private_root') or not Path(cfg['private_root']).is_absolute():
         raise ValueError('Configure an absolute private storage directory outside the repository')
     root = Path(cfg['private_root']).resolve()
@@ -120,17 +116,17 @@ def create_app(config=None):
             local = bool(request.client) and ipaddress.ip_address(request.client.host).is_loopback
         except ValueError:
             local = False
-        if not local:
+        host = request.headers.get('host', '')
+        local_host = re.fullmatch(r'(?:localhost|127\.0\.0\.1|\[::1\])(?::[0-9]+)?', host, re.IGNORECASE)
+        if not local or not local_host:
             response = JSONResponse({'detail': 'Local research access only'}, status_code=403)
+        elif request.method in ('POST', 'DELETE') and request.headers.get('x-demo-request') != '1':
+            response = JSONResponse({'detail': 'Invalid demo request'}, status_code=403)
         else:
             response = await call_next(request)
         response.headers['Cache-Control'] = 'no-store'
         response.headers['X-Content-Type-Options'] = 'nosniff'
         return response
-
-    def authorize(header):
-        if not header or not hmac.compare_digest(header.encode('utf-8'), ('Bearer ' + token).encode('utf-8')):
-            raise HTTPException(status_code=401, detail='Authentication required')
 
     def ready():
         paths = ('audio_checkpoint', 'visual_checkpoint', 'classifier_checkpoint')
@@ -202,8 +198,7 @@ def create_app(config=None):
                 'note': 'Local research only; model configuration is not proof of readiness or evaluation.'}
 
     @app.post('/jobs', status_code=202)
-    async def submit(request: Request, authorization: str = Header(default=None)):
-        authorize(authorization)
+    async def submit(request: Request):
         if not ready():
             raise HTTPException(status_code=503, detail='Model unavailable or not authorized')
         if request.headers.get('content-type', '').split(';')[0].lower() not in ('video/mp4', 'application/octet-stream'):
@@ -236,8 +231,7 @@ def create_app(config=None):
                 slots.release()
 
     @app.get('/jobs/{job_id}')
-    def status(job_id: str, authorization: str = Header(default=None)):
-        authorize(authorization)
+    def status(job_id: str):
         if len(job_id) != 32 or any(c not in '0123456789abcdef' for c in job_id):
             raise HTTPException(status_code=404, detail='Job not found')
         path = jobs / f'{job_id}.json'
@@ -247,8 +241,7 @@ def create_app(config=None):
             return json.loads(path.read_text())
 
     @app.delete('/jobs/{job_id}', status_code=204)
-    def delete(job_id: str, authorization: str = Header(default=None)):
-        authorize(authorization)
+    def delete(job_id: str):
         if len(job_id) != 32 or any(c not in '0123456789abcdef' for c in job_id):
             raise HTTPException(status_code=404, detail='Job not found')
         path = jobs / f'{job_id}.json'

@@ -1,7 +1,6 @@
 """Single-operator Hugging Face Space with guarded access to the local API."""
 import os
 import re
-import secrets
 from pathlib import Path
 
 from authlib.integrations.starlette_client import OAuth, OAuthError
@@ -32,9 +31,7 @@ def create_space():
         client_kwargs={'scope': 'openid profile', 'code_challenge_method': 'S256'},
     )
 
-    # The existing API remains an in-process, bearer-protected ASGI app.
-    token = secrets.token_urlsafe(32)
-    os.environ['DEEPFAKE_API_TOKEN'] = token
+    # The internal API is reachable only through the signed-in route below.
     internal = create_app()
     app = FastAPI(
         docs_url=None, redoc_url=None, openapi_url=None,
@@ -77,8 +74,8 @@ def create_space():
                 'access': 'hosted', 'note': 'Model verified on startup.',
             }, headers={'Cache-Control': 'no-store'})(scope, receive, send)
             return
-        headers = [(k, v) for k, v in scope['headers'] if k.lower() != b'authorization']
-        headers.append((b'authorization', f'Bearer {token}'.encode()))
+        headers = [(k, v) for k, v in scope['headers'] if k.lower() != b'host']
+        headers.append((b'host', b'localhost'))
         await internal({**scope, 'client': ('127.0.0.1', 0), 'headers': headers}, receive, send)
 
     @app.get('/')
