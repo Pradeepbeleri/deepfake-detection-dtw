@@ -12,9 +12,9 @@ describe('result rendering: synthetic fixtures only', () => {
   it('labels the supplied fake-class score and keeps timing separate', () => {
     const html=renderToStaticMarkup(<ResultDetails result={fixture}/>);
     expect(html).toContain('Model label: real');
-    expect(html).toContain('0.114');
+    expect(html).toContain('11.4 / 100');
     expect(html).toContain('Uncalibrated · not a probability');
-    expect(html).toContain('decision threshold 0.495');
+    expect(html).toContain('decision threshold 49.5 out of 100');
     expect(html).toContain('not a manipulated-segment timeline');
     expect(html).toContain('EXPERIMENTAL');
     expect(html).toContain('not been validated as synchronization evidence');
@@ -75,7 +75,7 @@ describe('DTW feature display and prediction provenance', () => {
     const html = renderToStaticMarkup(<ResultDetails result={result}/>);
     expect(html).toContain('Temporal model (fusion)');
     expect(html).toContain('are inputs to this prediction');
-    expect(html).toContain('0.230');
+    expect(html).toContain('23.0 / 100');
   });
 
   it('renders measured DTW features and marks uncomputed ones rather than printing zero', () => {
