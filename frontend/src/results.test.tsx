@@ -89,7 +89,7 @@ describe('DTW feature display and prediction provenance', () => {
 
   it('distinguishes measured zero from a missing lag', () => {
     const zero = { ...base, timing: { ...base.timing, video_times_seconds: [0,1], median_video_minus_audio_seconds: 0 } };
-    expect(renderToStaticMarkup(<ResultDetails result={zero}/>)).toContain('Estimated lag: 0 ms');
+    expect(renderToStaticMarkup(<ResultDetails result={zero}/>)).toContain('0 ms estimated lag');
     const missing = { ...base, timing: { ...base.timing, median_video_minus_audio_seconds: undefined } };
     expect(renderToStaticMarkup(<ResultDetails result={missing}/>)).toContain('Estimated lag unavailable');
   });

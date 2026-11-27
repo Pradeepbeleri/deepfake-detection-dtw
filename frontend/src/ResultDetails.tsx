@@ -64,14 +64,16 @@ function TimingSummary({ timing, dtwDrove }: { timing: Analysis['timing']; dtwDr
   const lagMs = typeof offset === 'number' && Number.isFinite(offset) ? -offset * 1000 : null;
   const magnitude = lagMs === null ? null : Math.round(Math.abs(lagMs));
   let summary = 'Estimated lag unavailable';
-  if (magnitude === 0) summary = 'Estimated lag: 0 ms';
+  if (magnitude === 0) summary = '0 ms estimated lag';
   if (magnitude && lagMs !== null) summary = `Audio about ${magnitude} ms ${lagMs > 0 ? 'behind' : 'ahead of'} lip movement`;
 
   return <>
     <div className="notice">
       <span className="micro">ESTIMATED DTW LAG</span>
       <div><strong>{summary}</strong></div>
-      <small>Median of the matched audio and video timestamps in this upload. This experimental estimate can differ from the actual delay.</small>
+      <small>{magnitude === 0
+        ? 'The matched timestamps have a median offset of zero. A delayed clip can also produce this estimate.'
+        : 'Median of the matched audio and video timestamps in this upload. This experimental estimate can differ from the actual delay.'}</small>
     </div>
     <p className="result-disclaimer">{dtwDrove
       ? 'The temporal model uses timing features in its prediction.'
