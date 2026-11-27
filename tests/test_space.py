@@ -10,7 +10,8 @@ pytest.importorskip('itsdangerous')
 from deepfake_dtw.space import create_space
 
 
-def test_hosted_session_controls_upload_and_result_access(tmp_path, monkeypatch):
+@pytest.mark.parametrize('render', [False, True])
+def test_hosted_session_controls_upload_and_result_access(tmp_path, monkeypatch, render):
     (tmp_path / 'assets').mkdir()
     (tmp_path / 'index.html').write_text('Hosted frontend')
     checkpoint = tmp_path / 'checkpoint'
@@ -31,12 +32,19 @@ def test_hosted_session_controls_upload_and_result_access(tmp_path, monkeypatch)
         'DEEPFAKE_DINOV2_SOURCE': str(tmp_path),
         'DEEPFAKE_AUTHORIZED_MODELS': '1',
     }
+    host = 'owner-demo.onrender.com' if render else 'owner-demo.hf.space'
+    if render:
+        env.update(RENDER_EXTERNAL_HOSTNAME=host, DEEPFAKE_DEMO_EMAIL='owner@example.com')
+    else:
+        monkeypatch.delenv('RENDER_EXTERNAL_HOSTNAME', raising=False)
     for key, value in env.items():
         monkeypatch.setenv(key, value)
 
     class Provider:
         async def authorize_access_token(self, request):
-            return {'userinfo': {'preferred_username': request.query_params['test_user']}}
+            user = request.query_params['test_user']
+            return {'userinfo': {'preferred_username': user, 'email': user+'@example.com',
+                                 'email_verified': request.query_params.get('verified') == 'true'}}
 
     monkeypatch.setattr('deepfake_dtw.space.OAuth.register', lambda *_args, **_kwargs: Provider())
     monkeypatch.setattr('deepfake_dtw.api._run_inference', lambda *_: {
@@ -44,12 +52,15 @@ def test_hosted_session_controls_upload_and_result_access(tmp_path, monkeypatch)
     })
     headers = {'Content-Type': 'video/mp4', 'X-Demo-Request': '1'}
 
-    with TestClient(create_space(), base_url='https://owner-demo.hf.space') as client:
+    with TestClient(create_space(), base_url=f'https://{host}') as client:
+        assert client.get('/healthz').status_code == 200
         assert client.get('/', follow_redirects=False).headers['location'] == '/login'
         assert client.post('/api/jobs', content=b'fixture', headers=headers).status_code == 401
-        assert client.get('/login/callback?test_user=another-user').status_code == 403
+        assert client.get('/login/callback?test_user=another-user&verified=true').status_code == 403
         assert client.get('/api/health').status_code == 401
-        response = client.get('/login/callback?test_user=owner', follow_redirects=False)
+        if render:
+            assert client.get('/login/callback?test_user=owner').status_code == 403
+        response = client.get('/login/callback?test_user=owner&verified=true', follow_redirects=False)
         assert response.status_code == 303
         cookie = response.headers['set-cookie'].lower()
         assert 'secure' in cookie and 'httponly' in cookie

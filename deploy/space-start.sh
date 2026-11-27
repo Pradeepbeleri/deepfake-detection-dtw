@@ -13,4 +13,4 @@ export XFORMERS_DISABLED=1 OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=1
 python /app/deploy/stage_models.py
 unset HF_TOKEN DEEPFAKE_TEMPORAL_CHECKPOINT DEEPFAKE_TEMPORAL_SHA256
 export DEEPFAKE_AUTHORIZED_MODELS=1
-exec python -m uvicorn deepfake_dtw.space:create_space --factory --host 0.0.0.0 --port 7860 --no-proxy-headers --no-access-log
+exec python -m uvicorn deepfake_dtw.space:create_space --factory --host 0.0.0.0 --port "${PORT:-7860}" --no-proxy-headers --no-access-log

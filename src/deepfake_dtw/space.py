@@ -1,4 +1,4 @@
-"""Single-operator Hugging Face Space with guarded access to the local API."""
+"""Single-operator hosted demo with guarded access to the local API."""
 import os
 import re
 from pathlib import Path
@@ -13,22 +13,28 @@ from .api import create_app
 
 
 def create_space():
-    host = os.environ['SPACE_HOST']
-    if not re.fullmatch(r'[a-zA-Z0-9-]+\.hf\.space', host):
-        raise ValueError('Configure the canonical Hugging Face Space hostname')
-    owner = os.environ['DEEPFAKE_DEMO_USER'].strip().casefold()
+    render_host = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
+    host = render_host or os.environ['SPACE_HOST']
+    provider = 'google' if render_host else 'huggingface'
+    suffix = 'onrender.com' if render_host else 'hf.space'
+    if not re.fullmatch(r'[a-zA-Z0-9-]+\.' + re.escape(suffix), host):
+        raise ValueError('Configure the canonical deployment hostname')
+    owner_key = 'DEEPFAKE_DEMO_EMAIL' if render_host else 'DEEPFAKE_DEMO_USER'
+    owner = os.environ[owner_key].strip().casefold()
     session_secret = os.environ['DEEPFAKE_SESSION_SECRET']
     if not owner or len(session_secret) < 32:
-        raise ValueError('Configure an approved Hugging Face username and session secret')
+        raise ValueError('Configure an approved operator and session secret')
 
     callback = f'https://{host}/login/callback'
     oauth = OAuth()
-    huggingface = oauth.register(
-        name='huggingface',
+    identity_provider = oauth.register(
+        name=provider,
         client_id=os.environ['OAUTH_CLIENT_ID'],
         client_secret=os.environ['OAUTH_CLIENT_SECRET'],
-        server_metadata_url='https://huggingface.co/.well-known/openid-configuration',
-        client_kwargs={'scope': 'openid profile', 'code_challenge_method': 'S256'},
+        server_metadata_url=('https://accounts.google.com/.well-known/openid-configuration' if render_host
+                             else 'https://huggingface.co/.well-known/openid-configuration'),
+        client_kwargs={'scope': 'openid email' if render_host else 'openid profile',
+                       'code_challenge_method': 'S256'},
     )
 
     # The internal API is reachable only through the signed-in route below.
@@ -40,21 +46,26 @@ def create_space():
     app.add_middleware(SessionMiddleware, secret_key=session_secret,
                        session_cookie='__Host-deepfake-session', https_only=True, max_age=3600)
 
+    @app.get('/healthz')
+    async def healthz():
+        return {'status': 'ok'}
+
     @app.get('/login')
     async def login(request: Request):
         request.session.clear()
-        return await huggingface.authorize_redirect(request, callback)
+        return await identity_provider.authorize_redirect(request, callback)
 
     @app.get('/login/callback')
     async def login_callback(request: Request):
         try:
-            credentials = await huggingface.authorize_access_token(request)
+            credentials = await identity_provider.authorize_access_token(request)
         except OAuthError:
-            return JSONResponse({'detail': 'Sign-in failed. Reopen the Space to try again.'}, status_code=401)
+            return JSONResponse({'detail': 'Sign-in failed. Reopen the demo to try again.'}, status_code=401)
         profile = credentials.get('userinfo', {})
-        name = profile.get('preferred_username')
+        name = profile.get('email' if render_host else 'preferred_username')
+        verified = not render_host or profile.get('email_verified') is True
         request.session.clear()
-        if not isinstance(name, str) or name.casefold() != owner:
+        if not verified or not isinstance(name, str) or name.casefold() != owner:
             return JSONResponse({'detail': 'This research demo is restricted to its operator.'}, status_code=403)
         request.session['operator'] = owner
         return RedirectResponse('/', status_code=303)
