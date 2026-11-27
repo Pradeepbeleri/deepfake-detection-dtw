@@ -14,7 +14,7 @@ describe('result rendering: synthetic fixtures only', () => {
     expect(html).toContain('Model label: real');
     expect(html).toContain('11.4 / 100');
     expect(html).toContain('Uncalibrated · not a probability');
-    expect(html).toContain('decision threshold 49.5 out of 100');
+    expect(html).not.toContain('49.5');
     expect(html).toContain('Audio about 100 ms behind lip movement');
     expect(html).toContain('EXPERIMENTAL');
     expect(html).toContain('This experimental estimate can differ from the actual delay.');
