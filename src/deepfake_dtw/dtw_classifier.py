@@ -371,6 +371,7 @@ def cmd_compare(args):
         arm = artifacts[best_mode]
         artifact = {'format': ARTIFACT_FORMAT, 'mode': best_mode,
                     'feature_names': list(FEATURE_NAMES),
+                    'dtw_signal_source': cache.get('signal_source', 'video'),
                     'state_dict': arm['state_dict'], 'hidden': arm['hidden'],
                     'normalization': {k: torch.from_numpy(np.asarray(v)) for k, v in arm['normalization'].items()},
                     'threshold': arm['threshold'], 'best_epoch': arm['best_epoch'],
@@ -410,6 +411,9 @@ def load_temporal_classifier(checkpoint, *, checkpoint_sha256, device='cpu'):
     mode = artifact.get('mode')
     if mode not in MODES:
         raise ValueError('Unsupported temporal classifier mode')
+    signal_source = artifact.get('dtw_signal_source', 'video')
+    if signal_source not in ('video', 'features'):
+        raise ValueError('Unsupported temporal classifier signal source')
     threshold = float(artifact['threshold'])
     if not np.isfinite(threshold):
         raise ValueError('Invalid temporal classifier threshold')
@@ -418,7 +422,7 @@ def load_temporal_classifier(checkpoint, *, checkpoint_sha256, device='cpu'):
     model.to(select_device(device)).eval()
     norm = {k: np.asarray(v, dtype=np.float32) for k, v in artifact['normalization'].items()}
     return {'artifact': artifact, 'model': model, 'mode': mode, 'threshold': threshold,
-            'normalization': norm, 'sha256': actual}
+            'normalization': norm, 'sha256': actual, 'dtw_signal_source': signal_source}
 
 
 def predict_temporal(loaded, *, dtw_values=None, embedding=None):
@@ -437,8 +441,10 @@ def predict_temporal(loaded, *, dtw_values=None, embedding=None):
     norm = loaded['normalization']
     x = np.where(np.isfinite(x), x, norm['median'])
     x = ((x - norm['mean']) / norm['std']).astype(np.float32)
+    model = loaded['model']
+    inputs = torch.from_numpy(x[None, :]).to(next(model.parameters()).device)
     with torch.no_grad():
-        score = float(torch.sigmoid(loaded['model'](torch.from_numpy(x[None, :]))).item())
+        score = float(torch.sigmoid(model(inputs)).item())
     if not np.isfinite(score):
         raise ValueError('Non-finite temporal classifier output')
     return {'classification': 'fake' if score >= loaded['threshold'] else 'real',

@@ -74,6 +74,12 @@ describe('result integrity', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({status:'completed_research_only',result:{classification:{classification:'real',score:.2,threshold:.5,score_kind:'uncalibrated sigmoid',warning:'test'},timing:{status:'experimental_unvalidated'}}}))));
     await expect(getJob('a'.repeat(32))).rejects.toThrow('invalid experimental timing path');
   });
+  it('rejects a label that contradicts the threshold comparison', async () => {
+    const result = {classification: {classification:'real', score:.8, threshold:.5,
+      score_kind:'uncalibrated sigmoid', warning:'fixture'}, timing:{status:'unavailable'}};
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({status:'completed_research_only',result}))));
+    await expect(getJob('a'.repeat(32))).rejects.toThrow('label that conflicts');
+  });
   it('rejects malformed signal arrays', async () => {
     const result = {classification:{classification:'real',score:.2,threshold:.5,score_kind:'uncalibrated sigmoid',warning:'test'},timing:{status:'experimental_unvalidated',audio_times_seconds:[0,1],video_times_seconds:[0,1],signals:{audio_times_seconds:[0,1],audio_rms:[.1],video_times_seconds:[0,1],lip_aperture:[.2,.3]}}};
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({status:'completed_research_only',result}))));

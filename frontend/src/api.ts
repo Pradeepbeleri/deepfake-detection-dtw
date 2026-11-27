@@ -35,6 +35,9 @@ export async function getJob(id: string, signal?: AbortSignal): Promise<Job> {
         !Number.isFinite(classification.score) || classification.score < 0 || classification.score > 1 ||
         !Number.isFinite(classification.threshold) || classification.score_kind !== 'uncalibrated sigmoid' ||
         typeof classification.warning !== 'string' || !timing || typeof timing.status !== 'string') throw new Error('The service returned an incomplete or unsupported result.');
+    if (classification.classification !== (classification.score >= classification.threshold ? 'fake' : 'real')) {
+      throw new Error('The service returned a label that conflicts with the score and threshold.');
+    }
     if (timing.stream_start_audio_minus_video_seconds !== undefined && !Number.isFinite(timing.stream_start_audio_minus_video_seconds)) throw new Error('The service returned an invalid stream start offset.');
     if (timing.max_warp_seconds !== undefined && (!Number.isFinite(timing.max_warp_seconds) || timing.max_warp_seconds < 0)) throw new Error('The service returned an invalid DTW search limit.');
     if (timing.isolated_missing_frames !== undefined && (!Number.isInteger(timing.isolated_missing_frames) || timing.isolated_missing_frames < 0)) throw new Error('The service returned an invalid missing-frame count.');

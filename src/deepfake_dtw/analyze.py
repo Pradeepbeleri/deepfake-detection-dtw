@@ -129,7 +129,14 @@ def analyze(video, *, audio_checkpoint, visual_checkpoint, visual_sha256, dinov2
             try:
                 head = load_temporal_classifier(temporal_checkpoint,
                                                 checkpoint_sha256=temporal_sha256, device=device)
+                signal_source = head['dtw_signal_source']
+                uses_embeddings = head['mode'] in ('baseline', 'fusion') or signal_source == 'features'
+                if uses_embeddings and head['artifact'].get('encoder_provenance') != result.get('encoder_provenance'):
+                    raise ValueError('Current encoders do not match temporal classifier training provenance')
                 dtw_values = timing.get('_dtw_values') if isinstance(timing, dict) else None
+                if head['mode'] in ('dtw', 'fusion') and signal_source == 'features':
+                    from .dtw_features import features_from_feature_artifact
+                    dtw_values = features_from_feature_artifact(features)['features']
                 embedding = None
                 if head['mode'] in ('baseline', 'fusion'):
                     from .training import read_features as _read

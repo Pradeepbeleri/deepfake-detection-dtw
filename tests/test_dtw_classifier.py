@@ -166,7 +166,8 @@ def test_dtw_arm_learns_the_separable_fixture(tmp_path):
     assert blind_acc <= 0.75
 
 
-def test_saved_model_round_trips_and_gates_on_hash(tmp_path):
+@pytest.mark.parametrize('signal_source', [None, 'features'])
+def test_saved_model_round_trips_and_gates_on_hash(tmp_path, signal_source):
     import hashlib
     rows = records(tmp_path, 12)
     items = prepare(rows)
@@ -180,6 +181,8 @@ def test_saved_model_round_trips_and_gates_on_hash(tmp_path):
                 'normalization': {k: torch.from_numpy(np.asarray(v))
                                   for k, v in arm['normalization'].items()},
                 'threshold': arm['threshold']}
+    if signal_source is not None:
+        artifact['dtw_signal_source'] = signal_source
     path = tmp_path / 'temporal.pt'
     torch.save(artifact, path)
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
@@ -188,6 +191,7 @@ def test_saved_model_round_trips_and_gates_on_hash(tmp_path):
         load_temporal_classifier(path, checkpoint_sha256='0' * 64)
     loaded = load_temporal_classifier(path, checkpoint_sha256=digest)
     assert loaded['mode'] == 'fusion'
+    assert loaded['dtw_signal_source'] == (signal_source or 'video')
 
     values = {n: 0.8 + 0.001 * k for k, n in enumerate(FEATURE_NAMES)}
     out = predict_temporal(loaded, dtw_values=values,

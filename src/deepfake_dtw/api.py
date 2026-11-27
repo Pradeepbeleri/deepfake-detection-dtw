@@ -175,10 +175,10 @@ def create_app(config=None):
             workspace.mkdir(mode=0o700)
             write_job(job_id, {'status': 'processing'})
             result = _run_inference(upload, cfg, workspace)
-            write_job(job_id, result)
         except Exception:
-            write_job(job_id, {'status': 'failed', 'error_code': 'inference_error', 'error': 'Video analysis failed; verify media and model configuration.'})
-        finally:
+            result = {'status': 'failed', 'error_code': 'inference_error',
+                      'error': 'Video analysis failed; verify media and model configuration.'}
+        try:
             try:
                 if workspace.exists() and not workspace.is_symlink():
                     shutil.rmtree(workspace)
@@ -188,8 +188,9 @@ def create_app(config=None):
                 upload.unlink(missing_ok=True)
             except OSError:
                 LOG.warning('Upload cleanup failed for job %s', job_id)
-            finally:
-                slots.release()
+            write_job(job_id, result)
+        finally:
+            slots.release()
 
     @app.get('/health')
     def health():
