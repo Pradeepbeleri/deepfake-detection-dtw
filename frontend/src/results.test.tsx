@@ -15,10 +15,10 @@ describe('result rendering: synthetic fixtures only', () => {
     expect(html).toContain('11.4 / 100');
     expect(html).toContain('Uncalibrated · not a probability');
     expect(html).toContain('decision threshold 49.5 out of 100');
-    expect(html).toContain('not a manipulated-segment timeline');
+    expect(html).toContain('Audio about 100 ms behind lip movement');
     expect(html).toContain('EXPERIMENTAL');
-    expect(html).toContain('not been validated as synchronization evidence');
-    expect(html).toContain('DTW is not used by the classifier.');
+    expect(html).toContain('This experimental estimate can differ from the actual delay.');
+    expect(html).toContain('The classifier gives the Real/Fake label separately.');
   });
   it('shows an unavailable timing state instead of a path', () => {
     const html=renderToStaticMarkup(<ResultDetails result={{...fixture,timing:{status:'unavailable',reason:'no reliable face'}}}/>);
@@ -32,7 +32,7 @@ describe('result rendering: synthetic fixtures only', () => {
     expect(html).toContain('Model label: real');
     expect(html).toContain('Audio starts 200 ms after video');
     expect(html).toContain('Audio content can still be delayed within the stream');
-    expect(html).toContain('within ±0.40 s of the diagonal');
+    expect(html).toContain('limited to ±400 ms');
     expect(html).toContain('skipped 2 isolated frames with no detected face');
     expect(html).toContain('<polyline');
   });
@@ -41,7 +41,8 @@ describe('result rendering: synthetic fixtures only', () => {
     const html=renderToStaticMarkup(<ResultDetails result={{...fixture,timing}}/>);
     expect(html).toContain('EXTRACTED SIGNALS');
     expect(html).toContain('Each vertical scale is normalized separately');
-    expect(html).toContain('Cross-correlation lag: 0.200 s');
+    expect(html).toContain('Show timing chart');
+    expect(html).not.toContain('Cross-correlation lag');
   });
 });
 
@@ -78,16 +79,19 @@ describe('DTW feature display and prediction provenance', () => {
     expect(html).toContain('23.0 / 100');
   });
 
-  it('renders measured DTW features and marks uncomputed ones rather than printing zero', () => {
-    const result = { ...base, timing: { ...base.timing, dtw_features: {
-      dtw_normalized_cost: 0.4796, dtw_boundary_fraction: 0.043,
-      dtw_median_offset_seconds: -0.12, xcorr_peak: null } } };
+  it('shows the measured lag direction and hides the feature vector', () => {
+    const result = { ...base, timing: { ...base.timing, video_times_seconds: [.12,1.12],
+      median_video_minus_audio_seconds: .12, dtw_features: { dtw_normalized_cost: .4796 } } };
     const html = renderToStaticMarkup(<ResultDetails result={result}/>);
-    expect(html).toContain('DTW FEATURE VECTOR');
-    expect(html).toContain('0.480');            // alignment cost, 3dp
-    expect(html).toContain('-120 ms');          // seconds rendered as ms
-    expect(html).toContain('not computed');     // null is never shown as 0
-    expect(html).not.toContain('>0.000<');
+    expect(html).toContain('Audio about 120 ms ahead of lip movement');
+    expect(html).not.toContain('DTW FEATURE VECTOR');
+  });
+
+  it('distinguishes measured zero from a missing lag', () => {
+    const zero = { ...base, timing: { ...base.timing, video_times_seconds: [0,1], median_video_minus_audio_seconds: 0 } };
+    expect(renderToStaticMarkup(<ResultDetails result={zero}/>)).toContain('Estimated lag: 0 ms');
+    const missing = { ...base, timing: { ...base.timing, median_video_minus_audio_seconds: undefined } };
+    expect(renderToStaticMarkup(<ResultDetails result={missing}/>)).toContain('Estimated lag unavailable');
   });
 });
 
@@ -101,15 +105,14 @@ describe('timing disclaimer matches whether DTW was actually used', () => {
     const html = renderToStaticMarkup(<ResultDetails result={{...base,
       classification:{...base.classification, prediction_source:'baseline_v1_embeddings',
         dtw_used_for_prediction:false}}}/>);
-    expect(html).toContain('DTW is not used by the classifier');
+    expect(html).toContain('The classifier gives the Real/Fake label separately');
   });
 
   it('never claims DTW is unused when it drove the prediction', () => {
     const html = renderToStaticMarkup(<ResultDetails result={{...base,
       classification:{...base.classification, prediction_source:'temporal_fusion', mode:'fusion',
         dtw_used_for_prediction:true}}}/>);
-    expect(html).not.toContain('DTW is not used by the classifier');
-    expect(html).toContain('inputs to the temporal model');
-    expect(html).toContain('within run-to-run noise');
+    expect(html).not.toContain('The classifier gives the Real/Fake label separately');
+    expect(html).toContain('The temporal model uses timing features in its prediction.');
   });
 });

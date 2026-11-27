@@ -12,45 +12,10 @@ function SignalTimelines({ signals }: { signals: NonNullable<Analysis['timing'][
 }
 
 
-const FEATURE_LABELS: Record<string, string> = {
-  dtw_normalized_cost: 'DTW alignment cost',
-  dtw_gain_over_direct: 'Gain over no-warp',
-  direct_alignment_cost: 'Direct (no-warp) cost',
-  dtw_median_offset_seconds: 'Median offset',
-  dtw_mean_abs_offset_seconds: 'Mean |offset|',
-  dtw_offset_iqr_seconds: 'Offset spread (IQR)',
-  dtw_offset_drift_seconds: 'Offset drift',
-  dtw_boundary_fraction: 'Warp-band contact',
-  dtw_path_length_ratio: 'Path length ratio',
-  xcorr_peak: 'Cross-correlation peak',
-  xcorr_lag_seconds: 'Cross-correlation lag',
-  xcorr_peak_margin: 'Peak margin',
-  audio_energy_cv: 'Audio energy variation',
-  aperture_std: 'Aperture spread',
-  aperture_velocity_mean_abs: 'Mean |aperture velocity|',
-  overlap_seconds: 'Usable overlap',
-};
-const SECONDS = /_seconds$/;
-
-function DtwFeatureTable({ features }: { features: NonNullable<Analysis['timing']['dtw_features']> }) {
-  const rows = Object.entries(features);
-  if (!rows.length) return null;
-  return <div className="dtw-features"><span className="micro">DTW FEATURE VECTOR</span>
-    <table className="feature-table"><tbody>
-      {rows.map(([key, value]) => <tr key={key}>
-        <th scope="row">{FEATURE_LABELS[key] ?? key}</th>
-        <td>{value === null ? <span className="unavailable">not computed</span>
-          : SECONDS.test(key) ? `${(value * 1000).toFixed(0)} ms` : value.toFixed(3)}</td>
-      </tr>)}
-    </tbody></table>
-    <p className="chart-caption">Frequent contact with the warp band means the path often reached its search limit.</p>
-  </div>;
-}
-
 function OffsetChart({ audio, video }: { audio: number[]; video: number[] }) {
   if (!audio.length || audio.length !== video.length) return null;
   const start = audio[0], span = Math.max(audio[audio.length - 1] - start, .01);
-  const points = audio.map((t, i) => `${((t-start)/span*100).toFixed(2)},${(50 - Math.max(-.5, Math.min(.5, video[i]-t))*80).toFixed(2)}`).join(' ');
+  const points = audio.map((t, i) => `${((t-start)/span*100).toFixed(2)},${(50 - Math.max(-.5, Math.min(.5, t-video[i]))*80).toFixed(2)}`).join(' ');
   return <div className="chart-wrap"><svg className="chart" viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="Experimental DTW path offset over audio time. The center line represents zero delay."><line x1="0" y1="50" x2="100" y2="50" className="chart-axis"/><polyline points={points} className="chart-line"/></svg><div className="chart-labels"><span>{start.toFixed(1)}s</span><span>Audio timeline</span><span>{audio[audio.length-1].toFixed(1)}s</span></div></div>;
 }
 
@@ -70,7 +35,6 @@ export function ResultDetails({ result }: { result: Analysis }) {
   const dtwDrove = result.classification.dtw_used_for_prediction === true;
   const displayScore = (result.classification.score * 100).toFixed(1);
   const displayThreshold = (result.classification.threshold * 100).toFixed(1);
-  const streamStartOffset = result.timing.stream_start_audio_minus_video_seconds;
   let sourceLabel = `Temporal model (${result.classification.mode ?? 'unknown'})`;
   if (src === 'baseline_v1_embeddings') sourceLabel = 'Baseline V1 — Whisper + DINOv2 embeddings';
   if (src === 'drive_demo_adapted') sourceLabel = 'Drive demo model — trained on the demo clips';
@@ -85,10 +49,44 @@ export function ResultDetails({ result }: { result: Analysis }) {
       {typeof result.classification.baseline_v1_score === 'number' &&
         <small>Baseline V1 score for comparison: {(result.classification.baseline_v1_score * 100).toFixed(1)} / 100</small>}
     </div>}<div className="result-heading"><span className="result-symbol" aria-hidden="true">✓</span><div><span className="micro">CLASSIFIER ASSESSMENT</span><h4>{result.classification.classification === 'fake' ? 'Model label: fake' : 'Model label: real'}</h4></div></div><p className="result-disclaimer">{result.classification.warning}</p><div className="metrics"><div><span>FAKE-CLASS SCORE</span><strong>{displayScore} / 100</strong><small>Uncalibrated · not a probability</small></div><div><span>DECISION THRESHOLD</span><strong>{displayThreshold} / 100</strong><small>Validation-selected</small></div></div><div className="score-scale"><div className="scale-heading"><span>Fake-class score out of 100</span><span>Threshold {displayThreshold} / 100</span></div><div className="score-track" role="img" aria-label={`Uncalibrated fake-class score ${displayScore} out of 100, decision threshold ${displayThreshold} out of 100`}><span className="score-fill" style={{width: `${result.classification.score * 100}%`}}/><span className="threshold-mark" style={{left: `${Math.max(0, Math.min(1, result.classification.threshold)) * 100}%`}}/></div><div className="scale-heading"><span>0</span><span>100</span></div><p>Scores indicate model output, not the probability that a video is authentic or fake.</p></div><div className="timing-title"><div><span className="micro">TIMING ANALYSIS</span><h4>Audio / lip alignment</h4></div><span className="outline-tag">EXPERIMENTAL</span></div>
-    {typeof streamStartOffset === 'number' && <StreamStartOffset seconds={streamStartOffset}/>}
-    <p className="result-disclaimer">Audio delay alone does not establish whether a video is real or fake.</p>
-    {result.timing.status === 'experimental_unvalidated' && result.timing.audio_times_seconds && result.timing.video_times_seconds ? <>{result.timing.signals && <SignalTimelines signals={result.timing.signals}/>}{result.timing.dtw_features && <DtwFeatureTable features={result.timing.dtw_features}/>}<p className="result-disclaimer">Each point compares a pair of actual DTW path timestamps. The line is not a manipulated-segment timeline.</p><OffsetChart audio={result.timing.audio_times_seconds} video={result.timing.video_times_seconds}/><p className="chart-caption">Positive offsets pair later video with earlier audio.
-      {typeof result.timing.max_warp_seconds === 'number' && ` This DTW path searches within ±${result.timing.max_warp_seconds.toFixed(2)} s of the diagonal.`}
-      {!!result.timing.isolated_missing_frames && ` The timing analysis skipped ${result.timing.isolated_missing_frames} isolated frames with no detected face.`}
-    </p><div className="timing-meta"><span>Median video − audio <b>{result.timing.median_video_minus_audio_seconds?.toFixed(3)} s</b></span><span>Path cost <b>{result.timing.normalized_cost?.toFixed(3)}</b></span></div>{result.timing.cross_correlation?.status === "experimental_unvalidated" && <div className="method-comparison"><span>Fixed-zero reference: 0.000 s</span><span>Cross-correlation lag: {result.timing.cross_correlation.offset_seconds?.toFixed(3)} s{result.timing.cross_correlation.search_boundary ? " · search boundary" : ""}</span><small>Both methods and DTW are exploratory; their outputs are not validated estimates of manipulation.</small></div>}<p className="result-disclaimer">{dtwDrove ? 'These timing features are inputs to the temporal model above. They are not a validated measure of audiovisual synchronization, and the measured gain from adding them to the embedding baseline was within run-to-run noise.' : 'DTW is not used by the classifier.'} This timing signal is experimental and has not been validated as synchronization evidence. {result.timing.caveat}</p></> : <div className="notice">Timing analysis unavailable{result.timing.reason ? `: ${result.timing.reason}` : '.'}</div>}</>;
+    <TimingSummary timing={result.timing} dtwDrove={dtwDrove}/>
+  </>;
+}
+
+function TimingSummary({ timing, dtwDrove }: { timing: Analysis['timing']; dtwDrove: boolean }) {
+  const audio = timing.audio_times_seconds;
+  const video = timing.video_times_seconds;
+  if (timing.status !== 'experimental_unvalidated' || !audio?.length || !video?.length) {
+    return <div className="notice">Timing analysis unavailable{timing.reason ? `: ${timing.reason}` : '.'}</div>;
+  }
+
+  // The backend reports video minus audio. Reverse the sign for audio lag.
+  const offset = timing.median_video_minus_audio_seconds;
+  const lagMs = typeof offset === 'number' && Number.isFinite(offset) ? -offset * 1000 : null;
+  const magnitude = lagMs === null ? null : Math.round(Math.abs(lagMs));
+  let summary = 'Estimated lag unavailable';
+  if (magnitude === 0) summary = 'Estimated lag: 0 ms';
+  if (magnitude && lagMs !== null) summary = `Audio about ${magnitude} ms ${lagMs > 0 ? 'behind' : 'ahead of'} lip movement`;
+
+  return <>
+    <div className="notice">
+      <span className="micro">ESTIMATED DTW LAG</span>
+      <div><strong>{summary}</strong></div>
+      <small>Median of the matched audio and video timestamps in this upload. This experimental estimate can differ from the actual delay.</small>
+    </div>
+    <p className="result-disclaimer">{dtwDrove
+      ? 'The temporal model uses timing features in its prediction.'
+      : 'The classifier gives the Real/Fake label separately.'}</p>
+    <details>
+      <summary>Show timing chart</summary>
+      <OffsetChart audio={audio} video={video}/>
+      <p className="chart-caption">Positive offsets mean matched audio is later than matched video.
+        {typeof timing.max_warp_seconds === 'number' && ` The path search was limited to ±${(timing.max_warp_seconds * 1000).toFixed(0)} ms.`}
+        {!!timing.isolated_missing_frames && ` The timing analysis skipped ${timing.isolated_missing_frames} isolated frames with no detected face.`}
+      </p>
+      {timing.signals && <SignalTimelines signals={timing.signals}/>}
+      {typeof timing.stream_start_audio_minus_video_seconds === 'number' &&
+        <StreamStartOffset seconds={timing.stream_start_audio_minus_video_seconds}/>}
+    </details>
+  </>;
 }
